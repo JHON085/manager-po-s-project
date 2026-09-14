@@ -17,6 +17,8 @@
   const syncPill = $('syncPill');
 
   const newPoBtn = $('newPoBtn');
+  const importExcelBtn = $('importExcelBtn');
+  const excelFileInput = $('excelFileInput');
   const poModal = $('poModal');
   const closeModalBtn = $('closeModalBtn');
   const cancelPoBtn = $('cancelPoBtn');
@@ -37,6 +39,17 @@
   const actualReadyDate = $('actualReadyDate');
   const poStatus = $('poStatus');
   const notes = $('notes');
+
+  const currency = $('currency');
+  const transportation = $('transportation');
+  const amountPo = $('amountPo');
+  const supplierQuotationNo = $('supplierQuotationNo');
+  const supplierPrice = $('supplierPrice');
+  const quotationNo = $('quotationNo');
+  const workOrder = $('workOrder');
+  const lspConsulted = $('lspConsulted');
+  const followUpStatus = $('followUpStatus');
+  const hiddenStatus = $('hiddenStatus');
 
   const ordersBody = $('ordersBody');
   const attentionList = $('attentionList');
@@ -66,10 +79,10 @@
     syncPill.textContent = text;
   }
 
-  function showToast(text, error = false) {
+  function showToast(text, error = false, duration = 3600) {
     toast.textContent = text;
     toast.className = error ? 'toast error' : 'toast';
-    setTimeout(() => { toast.className = 'toast hidden'; }, 3200);
+    setTimeout(() => { toast.className = 'toast hidden'; }, duration);
   }
 
   function escapeHtml(value) {
@@ -87,6 +100,7 @@
   function dateFromISO(value) {
     if (!value) return null;
     const [y, m, d] = value.split('-').map(Number);
+    if (!y || !m || !d) return null;
     return new Date(y, m - 1, d, 12, 0, 0, 0);
   }
 
@@ -104,8 +118,11 @@
   }
 
   function getHealth(order) {
+    if (order.status === 'Cancelado') {
+      return { key: 'done', label: 'Cancelado', cls: 'neutral', days: null };
+    }
     if (['Pronto', 'Embarcado', 'Concluído'].includes(order.status) || order.actual_ready_date) {
-      return { key: 'done', label: 'Pronto', cls: 'neutral', days: null };
+      return { key: 'done', label: order.status === 'Concluído' ? 'Concluído' : 'Pronto', cls: 'neutral', days: null };
     }
     const days = daysFromToday(order.estimated_ready_date);
     if (days === null) return { key: 'unknown', label: 'Sem data', cls: 'neutral', days: null };
@@ -113,6 +130,10 @@
     if (days === 0) return { key: 'near', label: 'Vence hoje', cls: 'warn', days };
     if (days <= 7) return { key: 'near', label: `${days} dia${days === 1 ? '' : 's'}`, cls: 'warn', days };
     return { key: 'ontime', label: 'No prazo', cls: 'ok', days };
+  }
+
+  function valueOrEmpty(value) {
+    return value === null || value === undefined ? '' : String(value);
   }
 
   function openModal(order = null) {
@@ -137,6 +158,17 @@
       actualReadyDate.value = order.actual_ready_date || '';
       poStatus.value = order.status || 'Aguardando produção';
       notes.value = order.notes || '';
+
+      currency.value = order.currency || '';
+      transportation.value = order.transportation || '';
+      amountPo.value = valueOrEmpty(order.amount_po);
+      supplierQuotationNo.value = order.supplier_quotation_no || '';
+      supplierPrice.value = valueOrEmpty(order.supplier_price);
+      quotationNo.value = order.quotation_no || '';
+      workOrder.value = order.work_order || '';
+      lspConsulted.value = order.lsp_consulted || '';
+      followUpStatus.value = order.follow_up_status || '';
+      hiddenStatus.value = order.hidden_status || '';
     }
 
     poModal.classList.remove('hidden');
@@ -176,7 +208,7 @@
 
     if (error) {
       setSync('Erro no banco');
-      showToast(`Erro ao carregar POs: ${error.message}`, true);
+      showToast(`Erro ao carregar POs: ${error.message}`, true, 6000);
       orders = [];
       render();
       return;
@@ -188,7 +220,7 @@
   }
 
   function renderMetrics() {
-    const active = orders.filter((o) => o.status !== 'Concluído');
+    const active = orders.filter((o) => !['Concluído', 'Cancelado'].includes(o.status));
     const health = active.map(getHealth);
     metricActive.textContent = active.length;
     metricOnTime.textContent = health.filter((h) => h.key === 'ontime').length;
@@ -223,7 +255,10 @@
     const search = searchInput.value.trim().toLowerCase();
     const status = statusFilter.value;
     const filtered = orders.filter((o) => {
-      const text = [o.po_number, o.supplier, o.client, o.origin, o.responsible].filter(Boolean).join(' ').toLowerCase();
+      const text = [
+        o.po_number, o.supplier, o.client, o.origin, o.responsible,
+        o.quotation_no, o.work_order, o.supplier_quotation_no, o.follow_up_status
+      ].filter(Boolean).join(' ').toLowerCase();
       return (!search || text.includes(search)) && (!status || o.status === status);
     });
 
@@ -245,7 +280,7 @@
           <td>
             <div class="actions">
               <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
-              ${!['Pronto','Embarcado','Concluído'].includes(o.status) ? `<button class="btn btn-secondary btn-small" data-action="ready" data-id="${o.id}">Marcar pronto</button>` : ''}
+              ${!['Pronto','Embarcado','Concluído','Cancelado'].includes(o.status) ? `<button class="btn btn-secondary btn-small" data-action="ready" data-id="${o.id}">Marcar pronto</button>` : ''}
               <button class="btn btn-danger btn-small" data-action="delete" data-id="${o.id}">Excluir</button>
             </div>
           </td>
@@ -309,11 +344,18 @@
     else showMessage(authMessage, 'Conta criada. Confirme o e-mail e depois faça login.', 'success');
   }
 
+  function optionalNumber(input) {
+    if (input.value === '') return null;
+    const n = Number(input.value);
+    return Number.isFinite(n) ? n : null;
+  }
+
   async function handleSavePO(event) {
     event.preventDefault();
     hideMessage(formError);
 
-    if (!poNumber.value.trim() || !supplier.value.trim() || !estimatedReadyDate.value) {
+    const isEditing = Boolean(poId.value);
+    if (!poNumber.value.trim() || !supplier.value.trim() || (!isEditing && !estimatedReadyDate.value)) {
       showMessage(formError, 'Preencha Número do PO, Fornecedor e Estimativa de prontidão.');
       return;
     }
@@ -335,15 +377,25 @@
       incoterm: incoterm.value || null,
       responsible: responsible.value.trim() || null,
       order_date: orderDate.value || null,
-      estimated_ready_date: estimatedReadyDate.value,
+      estimated_ready_date: estimatedReadyDate.value || null,
       actual_ready_date: actualReadyDate.value || null,
       status: poStatus.value,
-      notes: notes.value.trim() || null
+      notes: notes.value.trim() || null,
+      currency: currency.value.trim() || null,
+      transportation: transportation.value.trim() || null,
+      amount_po: optionalNumber(amountPo),
+      supplier_quotation_no: supplierQuotationNo.value.trim() || null,
+      supplier_price: optionalNumber(supplierPrice),
+      quotation_no: quotationNo.value.trim() || null,
+      work_order: workOrder.value.trim() || null,
+      lsp_consulted: lspConsulted.value.trim() || null,
+      follow_up_status: followUpStatus.value.trim() || null,
+      hidden_status: hiddenStatus.value.trim() || null
     };
 
     let result;
     try {
-      if (poId.value) {
+      if (isEditing) {
         result = await db
           .from('purchase_orders')
           .update(payload)
@@ -368,15 +420,12 @@
     if (result.error) {
       savePoBtn.disabled = false;
       savePoBtn.textContent = 'Salvar PO';
-      const friendly = result.error.code === '23505'
-        ? 'Já existe um PO com esse número na sua conta.'
-        : result.error.message;
-      showMessage(formError, `Não foi possível salvar: ${friendly}`);
+      showMessage(formError, `Não foi possível salvar: ${result.error.message}`);
       return;
     }
 
     closeModal();
-    showToast(poId.value ? 'PO atualizado com sucesso.' : 'PO cadastrado com sucesso.');
+    showToast(isEditing ? 'PO atualizado com sucesso.' : 'PO cadastrado com sucesso.');
     await loadOrders();
   }
 
@@ -415,6 +464,205 @@
     await loadOrders();
   }
 
+  function cleanText(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    return text && text !== '-' ? text : null;
+  }
+
+  function cleanPo(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text || text === '-' || text === '0') return null;
+    return text.replace(/\.0$/, '');
+  }
+
+  function numberOrNull(value) {
+    if (value === null || value === undefined || value === '' || value === '-') return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const cleaned = String(value).trim().replace(/,/g, '');
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function parseDateString(text) {
+    if (!text) return null;
+    const value = String(text).trim();
+    const iso = value.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+
+    const br = value.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
+    if (!br) return null;
+    let year = Number(br[3]);
+    if (year < 100) year += 2000;
+    const month = Number(br[2]);
+    const day = Number(br[1]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  function excelDateToISO(value) {
+    if (value === null || value === undefined || value === '' || value === 0 || value === '-') return null;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const millis = Date.UTC(1899, 11, 30) + Math.round(value * 86400000);
+      const d = new Date(millis);
+      if (Number.isNaN(d.getTime())) return null;
+      return d.toISOString().slice(0, 10);
+    }
+    return parseDateString(value);
+  }
+
+  function getCell(row, expectedHeader) {
+    const expected = expectedHeader.trim().toLowerCase();
+    const key = Object.keys(row).find((k) => String(k).trim().toLowerCase() === expected);
+    return key ? row[key] : null;
+  }
+
+  function parseIncoterm(value) {
+    const raw = String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    if (!raw) return null;
+    if (/FOB\s*\/\s*FCA/.test(raw) || /FOB\/FCA/.test(raw)) return 'FOB/FCA';
+    const known = ['EXW', 'FCA', 'FOB', 'CFR', 'CIF', 'CIP', 'DAP', 'DDP'];
+    return known.find((term) => new RegExp(`\\b${term}\\b`).test(raw)) || null;
+  }
+
+  function mapExcelStatus(statusValue, hiddenValue) {
+    const hidden = String(hiddenValue || '').trim().toLowerCase();
+    if (hidden.includes('cancelada') || hidden.includes('cancelado')) return 'Cancelado';
+
+    const status = String(statusValue || '').trim().toLowerCase();
+    if (status === 'docs recebidos e enviado ao cliente') return 'Concluído';
+    if (status === 'pendência documental' || status === 'pendencia documental') return 'Pronto';
+    if (status.includes('produção') || status.includes('producao') || status.includes('cobrança') || status.includes('cobranca')) return 'Em produção';
+    return 'Aguardando produção';
+  }
+
+  function hashText(text) {
+    let h1 = 0xdeadbeef ^ text.length;
+    let h2 = 0x41c6ce57 ^ text.length;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return `${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
+  }
+
+  function excelRowToRecord(row, fileName) {
+    const purchaseOrder = cleanPo(getCell(row, 'Purchase Order'));
+    if (!purchaseOrder) return null;
+
+    const sourceNo = numberOrNull(getCell(row, 'NO.'));
+    const supplierValue = cleanText(getCell(row, 'Supplier')) || 'Não informado';
+    const supplierQuote = cleanText(getCell(row, 'Supplier Quotation nº'));
+    const amount = numberOrNull(getCell(row, 'Amount of PO'));
+    const transportationRaw = cleanText(getCell(row, 'Transportation'));
+    const followStatus = cleanText(getCell(row, 'Status'));
+    const hidden = cleanText(getCell(row, 'Status oculto'));
+
+    const rawFingerprint = [sourceNo ?? '', purchaseOrder, supplierValue, supplierQuote || '', amount ?? ''].join('|');
+    const fingerprint = `followup:${sourceNo ?? 'x'}:${purchaseOrder}:${hashText(rawFingerprint)}`;
+
+    return {
+      user_id: currentUser.id,
+      po_number: purchaseOrder,
+      supplier: supplierValue,
+      client: cleanText(getCell(row, 'Customer')),
+      origin: null,
+      incoterm: parseIncoterm(transportationRaw),
+      responsible: null,
+      order_date: excelDateToISO(getCell(row, 'PO Received')),
+      estimated_ready_date: excelDateToISO(getCell(row, 'Promised delivery time Quotation')),
+      actual_ready_date: null,
+      status: mapExcelStatus(followStatus, hidden),
+      notes: null,
+      source_no: sourceNo === null ? null : Math.trunc(sourceNo),
+      currency: cleanText(getCell(row, 'Sales')),
+      transportation: transportationRaw,
+      amount_po: amount,
+      supplier_quotation_no: supplierQuote,
+      supplier_price: numberOrNull(getCell(row, 'Supplier Price')),
+      quotation_no: cleanText(getCell(row, 'Quotation NO.')),
+      work_order: cleanText(getCell(row, 'Work Order')),
+      lsp_consulted: cleanText(getCell(row, 'LSP Consulted')),
+      follow_up_status: followStatus,
+      hidden_status: hidden,
+      import_source: fileName,
+      import_fingerprint: fingerprint,
+      source_data: row
+    };
+  }
+
+  async function handleExcelImport(file) {
+    if (!currentUser) {
+      showToast('Faça login antes de importar.', true);
+      return;
+    }
+    if (!window.XLSX) {
+      showToast('A biblioteca de Excel não foi carregada. Atualize a página.', true, 6000);
+      return;
+    }
+
+    importExcelBtn.disabled = true;
+    importExcelBtn.textContent = 'Lendo Excel...';
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+      const sheetName = workbook.SheetNames.find((n) => n.trim().toUpperCase() === 'FOLLOW UP') || workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) throw new Error('Não encontrei a aba FOLLOW UP.');
+
+      const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
+      const mapped = rawRows.map((row) => excelRowToRecord(row, file.name)).filter(Boolean);
+      const uniqueMap = new Map();
+      for (const record of mapped) uniqueMap.set(record.import_fingerprint, record);
+      const records = [...uniqueMap.values()];
+
+      if (!records.length) throw new Error('Nenhum PO válido foi encontrado na planilha.');
+
+      const withoutEstimate = records.filter((r) => !r.estimated_ready_date).length;
+      const message = `Encontrei ${records.length} registros válidos na aba ${sheetName}.` +
+        (withoutEstimate ? ` ${withoutEstimate} estão sem uma data de prontidão reconhecível.` : '') +
+        `\n\nDeseja importar para o PO Control?`;
+      if (!confirm(message)) return;
+
+      const batchSize = 80;
+      for (let i = 0; i < records.length; i += batchSize) {
+        const batch = records.slice(i, i + batchSize);
+        importExcelBtn.textContent = `Importando ${Math.min(i + batch.length, records.length)}/${records.length}...`;
+        setSync(`Importando ${Math.min(i + batch.length, records.length)}/${records.length}`);
+
+        const { error } = await db
+          .from('purchase_orders')
+          .upsert(batch, {
+            onConflict: 'user_id,import_fingerprint',
+            ignoreDuplicates: true
+          });
+
+        if (error) {
+          const migrationHint = /column|constraint|estimated_ready_date|import_fingerprint/i.test(error.message)
+            ? ' Rode primeiro o arquivo migration_excel_import.sql no SQL Editor do Supabase.'
+            : '';
+          throw new Error(`${error.message}.${migrationHint}`);
+        }
+      }
+
+      showToast(`${records.length} registros processados. Importação concluída.`, false, 6000);
+      await loadOrders();
+    } catch (err) {
+      console.error(err);
+      showToast(`Erro na importação: ${err.message || err}`, true, 9000);
+      setSync('Erro na importação');
+    } finally {
+      importExcelBtn.disabled = false;
+      importExcelBtn.textContent = 'Importar Excel';
+      excelFileInput.value = '';
+    }
+  }
+
   async function init() {
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
       showMessage(authMessage, 'Configuração do Supabase ausente em config.js.');
@@ -446,6 +694,12 @@
   });
 
   newPoBtn.addEventListener('click', () => openModal());
+  importExcelBtn.addEventListener('click', () => excelFileInput.click());
+  excelFileInput.addEventListener('change', async () => {
+    const file = excelFileInput.files?.[0];
+    if (file) await handleExcelImport(file);
+  });
+
   closeModalBtn.addEventListener('click', closeModal);
   cancelPoBtn.addEventListener('click', closeModal);
   poModal.addEventListener('click', (event) => {

@@ -129,3 +129,10 @@ tr:last-child td { border-bottom:0; }
   .auth-actions { grid-template-columns:1fr; }
   .user-email { display:none; }
 }
+
+.page-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.extra-section { border:1px solid var(--border); border-radius:12px; padding:12px 14px; background:#f8fafc; }
+.extra-section summary { cursor:pointer; font-weight:800; color:#344054; }
+.extra-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-top:14px; }
+@media (max-width: 900px) { .extra-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width: 650px) { .page-actions { width:100%; } .page-actions .btn { flex:1; } .extra-grid { grid-template-columns:1fr; } }

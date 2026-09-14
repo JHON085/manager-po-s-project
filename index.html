@@ -53,7 +53,10 @@
           <h1>Dashboard</h1>
           <p>Acompanhe os pedidos e veja rapidamente o que está próximo ou atrasado.</p>
         </div>
-        <button id="newPoBtn" type="button" class="btn btn-primary">+ Novo PO</button>
+        <div class="page-actions">
+          <button id="importExcelBtn" type="button" class="btn btn-secondary">Importar Excel</button>
+          <button id="newPoBtn" type="button" class="btn btn-primary">+ Novo PO</button>
+        </div>
       </div>
 
       <section class="metrics">
@@ -80,6 +83,7 @@
               <option>Pronto</option>
               <option>Embarcado</option>
               <option>Concluído</option>
+              <option>Cancelado</option>
             </select>
           </div>
         </div>
@@ -107,13 +111,29 @@
             <div class="field"><label for="supplier">Fornecedor *</label><input id="supplier" required /></div>
             <div class="field"><label for="client">Cliente</label><input id="client" /></div>
             <div class="field"><label for="poOrigin">Origem</label><input id="poOrigin" /></div>
-            <div class="field"><label for="incoterm">Incoterm</label><select id="incoterm"><option value="">Selecione</option><option>EXW</option><option>FCA</option><option>FOB</option><option>CFR</option><option>CIF</option><option>DAP</option><option>DDP</option></select></div>
+            <div class="field"><label for="incoterm">Incoterm</label><select id="incoterm"><option value="">Selecione</option><option>EXW</option><option>FCA</option><option>FOB</option><option>FOB/FCA</option><option>CFR</option><option>CIF</option><option>CIP</option><option>DAP</option><option>DDP</option></select></div>
             <div class="field"><label for="responsible">Responsável</label><input id="responsible" /></div>
             <div class="field"><label for="orderDate">Data do pedido</label><input id="orderDate" type="date" /></div>
             <div class="field"><label for="estimatedReadyDate">Estimativa de prontidão *</label><input id="estimatedReadyDate" type="date" required /></div>
             <div class="field"><label for="actualReadyDate">Prontidão real</label><input id="actualReadyDate" type="date" /></div>
-            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option>Aguardando produção</option><option>Em produção</option><option>Pronto</option><option>Embarcado</option><option>Concluído</option></select></div>
+            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option>Aguardando produção</option><option>Em produção</option><option>Pronto</option><option>Embarcado</option><option>Concluído</option><option>Cancelado</option></select></div>
             <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
+
+            <details class="extra-section span-3">
+              <summary>Dados adicionais da planilha</summary>
+              <div class="extra-grid">
+                <div class="field"><label for="currency">Moeda</label><input id="currency" /></div>
+                <div class="field"><label for="transportation">Transportation</label><input id="transportation" /></div>
+                <div class="field"><label for="amountPo">Amount of PO</label><input id="amountPo" type="number" step="0.01" /></div>
+                <div class="field"><label for="supplierQuotationNo">Supplier Quotation nº</label><input id="supplierQuotationNo" /></div>
+                <div class="field"><label for="supplierPrice">Supplier Price</label><input id="supplierPrice" type="number" step="0.01" /></div>
+                <div class="field"><label for="quotationNo">Quotation NO.</label><input id="quotationNo" /></div>
+                <div class="field"><label for="workOrder">Work Order</label><input id="workOrder" /></div>
+                <div class="field"><label for="lspConsulted">LSP Consulted</label><input id="lspConsulted" /></div>
+                <div class="field"><label for="followUpStatus">Status original da planilha</label><input id="followUpStatus" /></div>
+                <div class="field"><label for="hiddenStatus">Status oculto</label><input id="hiddenStatus" /></div>
+              </div>
+            </details>
           </div>
           <div id="formError" class="message error form-error hidden"></div>
           <div class="modal-actions">
@@ -125,9 +145,11 @@
     </div>
   </div>
 
+  <input id="excelFileInput" type="file" accept=".xlsx,.xlsm,.xls" hidden />
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="./config.js"></script>
   <script src="./app.js"></script>
 </body>
