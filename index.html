@@ -126,7 +126,7 @@ button,input,select,textarea{font:inherit}.app{min-height:100vh;display:grid;gri
 
 <div class="modal-backdrop" id="poModal">
   <div class="modal">
-    <div class="modal-head"><h2 id="formTitle">Novo PO <span style="font-size:11px;color:#64748b;font-weight:700">v1.4</span></h2><button class="close" onclick="closeModal('poModal')">×</button></div>
+    <div class="modal-head"><h2 id="formTitle">Novo PO <span style="font-size:11px;color:#64748b;font-weight:700">v1.5</span></h2><button class="close" onclick="closeModal('poModal')">×</button></div>
     <div class="modal-body">
       <form id="poForm">
         <input type="hidden" id="editId" />
@@ -211,10 +211,49 @@ function setAuthMessage(msg,isError=false){const el=document.getElementById('aut
 function showAuth(show){document.getElementById('authGate').classList.toggle('hidden',!show)}
 function configReady(){return window.PO_SUPABASE_URL&&window.PO_SUPABASE_PUBLISHABLE_KEY&&!window.PO_SUPABASE_URL.includes('SEU-PROJETO')&&!window.PO_SUPABASE_PUBLISHABLE_KEY.includes('COLE-AQUI')}
 function fromDb(r){return{id:r.id,poNumber:r.po_number||'',supplier:r.supplier||'',client:r.client||'',origin:r.origin||'',incoterm:r.incoterm||'',owner:r.owner||'',orderDate:r.order_date||'',estimatedReady:r.estimated_ready||'',actualReady:r.actual_ready||'',status:r.status||'Aguardando produção',notes:r.notes||'',createdAt:r.created_at,updatedAt:r.updated_at,history:Array.isArray(r.history)?r.history:[]}}
-function toDb(o,includeCreated=false,includeActualReady=supportsActualReady){const row={id:o.id,po_number:o.poNumber,supplier:o.supplier,client:o.client||null,origin:o.origin||null,incoterm:o.incoterm||null,owner:o.owner||null,order_date:o.orderDate||null,estimated_ready:o.estimatedReady,status:o.status,notes:o.notes||null,history:o.history||[],updated_by:currentUser?.id||null};if(includeActualReady)row.actual_ready=o.actualReady||null;if(includeCreated){row.created_by=currentUser?.id||null;row.created_at=o.createdAt||new Date().toISOString()}return row}
-function missingActualReady(error){const m=String(error?.message||'').toLowerCase();return m.includes('actual_ready')&&(m.includes('schema cache')||m.includes('column')||m.includes('does not exist'))}
-async function insertPOCompat(items){let payload=items.map(o=>toDb(o,true,supportsActualReady));let{error}=await db.from('purchase_orders').insert(payload);if(error&&supportsActualReady&&missingActualReady(error)){supportsActualReady=false;payload=items.map(o=>toDb(o,true,false));({error}=await db.from('purchase_orders').insert(payload));}return error}
-async function updatePOCompat(item,id){let{error}=await db.from('purchase_orders').update(toDb(item,false,supportsActualReady)).eq('id',id);if(error&&supportsActualReady&&missingActualReady(error)){supportsActualReady=false;({error}=await db.from('purchase_orders').update(toDb(item,false,false)).eq('id',id));}return error}
+function toDb(o,includeCreated=false){const row={id:o.id,po_number:o.poNumber,supplier:o.supplier,client:o.client||null,origin:o.origin||null,incoterm:o.incoterm||null,owner:o.owner||null,order_date:o.orderDate||null,estimated_ready:o.estimatedReady,actual_ready:o.actualReady||null,status:o.status,notes:o.notes||null,history:o.history||[],updated_by:currentUser?.id||null};if(includeCreated){row.created_by=currentUser?.id||null;row.created_at=o.createdAt||new Date().toISOString()}return row}
+function missingSchemaColumn(error){
+  const msg=String(error?.message||'');
+  let m=msg.match(/Could not find the ['"]([^'"]+)['"] column/i);
+  if(m)return m[1];
+  m=msg.match(/column\s+(?:public\.)?purchase_orders\.([a-zA-Z0-9_]+)\s+does not exist/i);
+  if(m)return m[1];
+  m=msg.match(/column\s+['"]?([a-zA-Z0-9_]+)['"]?\s+does not exist/i);
+  return m?m[1]:null;
+}
+function removePayloadColumn(payload,column){
+  let removed=false;
+  const clean=row=>{const next={...row};if(Object.prototype.hasOwnProperty.call(next,column)){delete next[column];removed=true}return next};
+  return{payload:Array.isArray(payload)?payload.map(clean):clean(payload),removed};
+}
+async function insertPOCompat(items){
+  let payload=items.map(o=>toDb(o,true));
+  for(let attempt=0;attempt<15;attempt++){
+    const{error}=await db.from('purchase_orders').insert(payload);
+    if(!error)return null;
+    const column=missingSchemaColumn(error);
+    if(!column)return error;
+    const cleaned=removePayloadColumn(payload,column);
+    if(!cleaned.removed)return error;
+    console.warn('purchase_orders sem a coluna '+column+'; tentando novamente sem ela.');
+    payload=cleaned.payload;
+  }
+  return{message:'Não foi possível adaptar os dados ao esquema atual de purchase_orders.'};
+}
+async function updatePOCompat(item,id){
+  let payload=toDb(item,false);
+  for(let attempt=0;attempt<15;attempt++){
+    const{error}=await db.from('purchase_orders').update(payload).eq('id',id);
+    if(!error)return null;
+    const column=missingSchemaColumn(error);
+    if(!column)return error;
+    const cleaned=removePayloadColumn(payload,column);
+    if(!cleaned.removed)return error;
+    console.warn('purchase_orders sem a coluna '+column+'; tentando novamente sem ela.');
+    payload=cleaned.payload;
+  }
+  return{message:'Não foi possível adaptar os dados ao esquema atual de purchase_orders.'};
+}
 async function init(){document.getElementById('todayText').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});if(!configReady()){showAuth(true);setAuthMessage('Configure o arquivo config.js com a URL e a Publishable Key do seu projeto Supabase.',true);setSync(false,'Configurar Supabase');return}db=window.supabase.createClient(window.PO_SUPABASE_URL,window.PO_SUPABASE_PUBLISHABLE_KEY);const{data:{session},error}=await db.auth.getSession();if(error){setAuthMessage(error.message,true);showAuth(true);return}if(session)await handleSession(session);else{showAuth(true);renderAll()}db.auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT'){currentUser=null;orders=[];quotes=[];quotesLoaded=false;quotesLoading=false;renderAll();showAuth(true);setSync(false,'Desconectado')}})}
 async function handleSession(session){currentUser=session.user;showAuth(false);setAuthMessage('');document.getElementById('accountInfo').innerHTML=`Conectado como <strong>${escapeHtml(currentUser.email||'usuário')}</strong><br>Dados compartilhados pelo banco do projeto Supabase.`;quotesLoaded=false;quotesLoading=false;renderAll();setSync(true,'Carregando POs...');loadOrders()}
 async function login(e){e.preventDefault();setAuthMessage('Entrando...');const email=authEmail.value.trim(),password=authPassword.value;const{data,error}=await db.auth.signInWithPassword({email,password});if(error){setAuthMessage(error.message,true);return}setAuthMessage('');await handleSession(data.session)}
