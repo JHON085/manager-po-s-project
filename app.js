@@ -55,15 +55,19 @@
   const attentionList = $('attentionList');
   const searchInput = $('searchInput');
   const statusFilter = $('statusFilter');
+  const situationFilter = $('situationFilter');
   const metricActive = $('metricActive');
   const metricOnTime = $('metricOnTime');
   const metricNear = $('metricNear');
   const metricLate = $('metricLate');
+  const metricDone = $('metricDone');
   const toast = $('toast');
 
   let db = null;
   let currentUser = null;
   let orders = [];
+  let refreshTimer = null;
+  let loadingOrders = false;
 
   function showMessage(el, text, type = 'error') {
     el.textContent = text;
@@ -122,14 +126,15 @@
       return { key: 'done', label: 'Cancelado', cls: 'neutral', days: null };
     }
     if (['Pronto', 'Embarcado', 'Concluído'].includes(order.status) || order.actual_ready_date) {
-      return { key: 'done', label: order.status === 'Concluído' ? 'Concluído' : 'Pronto', cls: 'neutral', days: null };
+      const label = order.status === 'Concluído' ? 'Concluído' : (order.status === 'Embarcado' ? 'Embarcado' : 'Pronto');
+      return { key: 'done', label, cls: 'neutral', days: null };
     }
     const days = daysFromToday(order.estimated_ready_date);
     if (days === null) return { key: 'unknown', label: 'Sem data', cls: 'neutral', days: null };
     if (days < 0) return { key: 'late', label: `Atrasado ${Math.abs(days)} dia${Math.abs(days) === 1 ? '' : 's'}`, cls: 'danger', days };
     if (days === 0) return { key: 'near', label: 'Vence hoje', cls: 'warn', days };
-    if (days <= 7) return { key: 'near', label: `${days} dia${days === 1 ? '' : 's'}`, cls: 'warn', days };
-    return { key: 'ontime', label: 'No prazo', cls: 'ok', days };
+    if (days <= 4) return { key: 'near', label: `Próximo • ${days} dia${days === 1 ? '' : 's'}`, cls: 'warn', days };
+    return { key: 'ontime', label: `No prazo • ${days} dias`, cls: 'ok', days };
   }
 
   function valueOrEmpty(value) {
@@ -185,11 +190,19 @@
 
   function setAuthView(user) {
     currentUser = user || null;
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
     if (currentUser) {
       authPage.classList.add('hidden');
       appPage.classList.remove('hidden');
       userEmail.textContent = currentUser.email || '';
       loadOrders();
+      // Atualização automática: mantém o dashboard próximo do tempo real sem precisar F5.
+      refreshTimer = setInterval(() => {
+        if (currentUser && !document.hidden) loadOrders(true);
+      }, 30000);
     } else {
       appPage.classList.add('hidden');
       authPage.classList.remove('hidden');
@@ -198,25 +211,29 @@
     }
   }
 
-  async function loadOrders() {
-    if (!currentUser) return;
-    setSync('Sincronizando...');
-    const { data, error } = await db
-      .from('purchase_orders')
-      .select('*')
-      .order('created_at', { ascending: false });
+  async function loadOrders(quiet = false) {
+    if (!currentUser || loadingOrders) return;
+    loadingOrders = true;
+    if (!quiet) setSync('Sincronizando...');
+    try {
+      const { data, error } = await db
+        .from('purchase_orders')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      setSync('Erro no banco');
-      showToast(`Erro ao carregar POs: ${error.message}`, true, 6000);
-      orders = [];
+      if (error) {
+        setSync('Erro no banco');
+        if (!quiet) showToast(`Erro ao carregar POs: ${error.message}`, true, 6000);
+        return;
+      }
+
+      orders = data || [];
+      const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setSync(`Sincronizado • ${time}`);
       render();
-      return;
+    } finally {
+      loadingOrders = false;
     }
-
-    orders = data || [];
-    setSync('Sincronizado');
-    render();
   }
 
   function renderMetrics() {
@@ -226,6 +243,7 @@
     metricOnTime.textContent = health.filter((h) => h.key === 'ontime').length;
     metricNear.textContent = health.filter((h) => h.key === 'near').length;
     metricLate.textContent = health.filter((h) => h.key === 'late').length;
+    if (metricDone) metricDone.textContent = orders.filter((o) => o.status === 'Concluído').length;
   }
 
   function renderAttention() {
@@ -254,29 +272,47 @@
   function renderTable() {
     const search = searchInput.value.trim().toLowerCase();
     const status = statusFilter.value;
+    const situation = situationFilter?.value || '';
     const filtered = orders.filter((o) => {
       const text = [
         o.po_number, o.supplier, o.client, o.origin, o.responsible,
         o.quotation_no, o.work_order, o.supplier_quotation_no, o.follow_up_status
       ].filter(Boolean).join(' ').toLowerCase();
-      return (!search || text.includes(search)) && (!status || o.status === status);
+      const h = getHealth(o);
+      const situationOk = !situation ||
+        (situation === 'today' && h.key === 'near' && h.days === 0) ||
+        (situation === 'near' && h.key === 'near' && h.days > 0) ||
+        (situation === 'done' && h.key === 'done') ||
+        h.key === situation;
+      return (!search || text.includes(search)) && (!status || o.status === status) && situationOk;
+    });
+
+    const priority = { late: 0, near: 1, ontime: 2, unknown: 3, done: 4 };
+    filtered.sort((a, b) => {
+      const ah = getHealth(a), bh = getHealth(b);
+      const p = (priority[ah.key] ?? 9) - (priority[bh.key] ?? 9);
+      if (p) return p;
+      if (ah.key === 'late') return (ah.days ?? 0) - (bh.days ?? 0);
+      if (ah.key === 'near' || ah.key === 'ontime') return (ah.days ?? 9999) - (bh.days ?? 9999);
+      return String(a.po_number || '').localeCompare(String(b.po_number || ''));
     });
 
     if (!filtered.length) {
-      ordersBody.innerHTML = '<tr><td colspan="7" class="empty">Nenhum PO encontrado.</td></tr>';
+      ordersBody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum PO encontrado.</td></tr>';
       return;
     }
 
     ordersBody.innerHTML = filtered.map((o) => {
       const health = getHealth(o);
       return `
-        <tr>
+        <tr class="row-${health.key}">
           <td><button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button></td>
           <td>${escapeHtml(o.supplier)}</td>
           <td>${escapeHtml(o.client || '—')}</td>
           <td>${formatDate(o.estimated_ready_date)}</td>
-          <td>${escapeHtml(o.status)}</td>
+          <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
+          <td>${escapeHtml(o.status)}</td>
           <td>
             <div class="actions">
               <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
@@ -562,8 +598,7 @@
     const followStatus = cleanText(getCell(row, 'Status'));
     const hidden = cleanText(getCell(row, 'Status oculto'));
 
-    const rawFingerprint = [sourceNo ?? '', purchaseOrder, supplierValue, supplierQuote || '', amount ?? ''].join('|');
-    const fingerprint = `followup:${sourceNo ?? 'x'}:${purchaseOrder}:${hashText(rawFingerprint)}`;
+    const fingerprint = `followup:${sourceNo ?? 'x'}:${purchaseOrder}`;
 
     return {
       user_id: currentUser.id,
@@ -595,6 +630,23 @@
     };
   }
 
+  function importRowKey(record) {
+    return `${record.source_no ?? 'x'}|${record.po_number}`;
+  }
+
+  function analyzeRecords(records) {
+    const health = records.map(getHealth);
+    return {
+      active: records.filter((r) => !['Concluído', 'Cancelado'].includes(r.status)).length,
+      late: health.filter((h) => h.key === 'late').length,
+      today: health.filter((h) => h.key === 'near' && h.days === 0).length,
+      near: health.filter((h) => h.key === 'near' && h.days > 0).length,
+      ontime: health.filter((h) => h.key === 'ontime').length,
+      done: records.filter((r) => r.status === 'Concluído').length,
+      unknown: health.filter((h) => h.key === 'unknown').length
+    };
+  }
+
   async function handleExcelImport(file) {
     if (!currentUser) {
       showToast('Faça login antes de importar.', true);
@@ -617,30 +669,77 @@
 
       const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
       const mapped = rawRows.map((row) => excelRowToRecord(row, file.name)).filter(Boolean);
-      const uniqueMap = new Map();
-      for (const record of mapped) uniqueMap.set(record.import_fingerprint, record);
-      const records = [...uniqueMap.values()];
 
+      // A chave NO. + Purchase Order é estável e permite atualizar a mesma linha
+      // quando prazo, status, preço ou outros campos mudarem na FOLLOW UP.
+      const uniqueMap = new Map();
+      for (const record of mapped) uniqueMap.set(importRowKey(record), record);
+      const records = [...uniqueMap.values()];
       if (!records.length) throw new Error('Nenhum PO válido foi encontrado na planilha.');
 
-      const withoutEstimate = records.filter((r) => !r.estimated_ready_date).length;
-      const message = `Encontrei ${records.length} registros válidos na aba ${sheetName}.` +
-        (withoutEstimate ? ` ${withoutEstimate} estão sem uma data de prontidão reconhecível.` : '') +
-        `\n\nDeseja importar para o PO Control?`;
+      const analysis = analyzeRecords(records);
+      const message = [
+        `FOLLOW UP encontrada: ${records.length} registros válidos.`,
+        '',
+        `🔴 Atrasados: ${analysis.late}`,
+        `🟠 Vencem hoje: ${analysis.today}`,
+        `🟡 Próximos (1–4 dias): ${analysis.near}`,
+        `🟢 No prazo (+4 dias): ${analysis.ontime}`,
+        `✅ Concluídos: ${analysis.done}`,
+        analysis.unknown ? `⚪ Sem data reconhecível: ${analysis.unknown}` : '',
+        '',
+        'Sincronizar esta versão da planilha com o PO Control?'
+      ].filter(Boolean).join('\n');
       if (!confirm(message)) return;
 
+      setSync('Comparando com o Supabase...');
+      const { data: existingData, error: existingError } = await db
+        .from('purchase_orders')
+        .select('id,source_no,po_number,import_fingerprint,import_source')
+        .eq('user_id', currentUser.id)
+        .not('import_source', 'is', null);
+      if (existingError) throw new Error(existingError.message);
+
+      const existingByKey = new Map();
+      const duplicateIds = [];
+      for (const row of (existingData || [])) {
+        const key = `${row.source_no ?? 'x'}|${row.po_number}`;
+        if (!existingByKey.has(key)) existingByKey.set(key, row);
+        else duplicateIds.push(row.id);
+      }
+
+      const incomingKeys = new Set(records.map(importRowKey));
+      const nowIds = new Set();
+      let updatedCount = 0;
+      let newCount = 0;
+
+      const synced = records.map((record) => {
+        const key = importRowKey(record);
+        const existing = existingByKey.get(key);
+        if (existing) {
+          updatedCount++;
+          nowIds.add(existing.id);
+          return {
+            ...record,
+            id: existing.id,
+            // Mantém o fingerprint antigo se essa linha veio de uma versão anterior,
+            // evitando conflito na primeira sincronização desta nova versão.
+            import_fingerprint: existing.import_fingerprint || record.import_fingerprint
+          };
+        }
+        newCount++;
+        return { ...record, id: crypto.randomUUID() };
+      });
+
       const batchSize = 80;
-      for (let i = 0; i < records.length; i += batchSize) {
-        const batch = records.slice(i, i + batchSize);
-        importExcelBtn.textContent = `Importando ${Math.min(i + batch.length, records.length)}/${records.length}...`;
-        setSync(`Importando ${Math.min(i + batch.length, records.length)}/${records.length}`);
+      for (let i = 0; i < synced.length; i += batchSize) {
+        const batch = synced.slice(i, i + batchSize);
+        importExcelBtn.textContent = `Sincronizando ${Math.min(i + batch.length, synced.length)}/${synced.length}...`;
+        setSync(`Sincronizando ${Math.min(i + batch.length, synced.length)}/${synced.length}`);
 
         const { error } = await db
           .from('purchase_orders')
-          .upsert(batch, {
-            onConflict: 'user_id,import_fingerprint',
-            ignoreDuplicates: true
-          });
+          .upsert(batch, { onConflict: 'id', ignoreDuplicates: false });
 
         if (error) {
           const migrationHint = /column|constraint|estimated_ready_date|import_fingerprint/i.test(error.message)
@@ -650,15 +749,31 @@
         }
       }
 
-      showToast(`${records.length} registros processados. Importação concluída.`, false, 6000);
+      // Remove linhas antigas da importação que deixaram de existir na planilha atual
+      // e duplicatas históricas, mantendo POs criados manualmente intactos.
+      const staleIds = (existingData || [])
+        .filter((row) => !incomingKeys.has(`${row.source_no ?? 'x'}|${row.po_number}`))
+        .map((row) => row.id);
+      const toDelete = [...new Set([...duplicateIds, ...staleIds])];
+      for (let i = 0; i < toDelete.length; i += 100) {
+        const ids = toDelete.slice(i, i + 100);
+        const { error } = await db
+          .from('purchase_orders')
+          .delete()
+          .eq('user_id', currentUser.id)
+          .in('id', ids);
+        if (error) throw new Error(`Dados sincronizados, mas houve erro ao limpar linhas antigas: ${error.message}`);
+      }
+
+      showToast(`FOLLOW UP sincronizada: ${newCount} novos, ${updatedCount} atualizados${toDelete.length ? `, ${toDelete.length} antigos removidos` : ''}.`, false, 7000);
       await loadOrders();
     } catch (err) {
       console.error(err);
-      showToast(`Erro na importação: ${err.message || err}`, true, 9000);
-      setSync('Erro na importação');
+      showToast(`Erro na sincronização: ${err.message || err}`, true, 9000);
+      setSync('Erro na sincronização');
     } finally {
       importExcelBtn.disabled = false;
-      importExcelBtn.textContent = 'Importar Excel';
+      importExcelBtn.textContent = 'Sincronizar Excel';
       excelFileInput.value = '';
     }
   }
@@ -709,6 +824,11 @@
 
   searchInput.addEventListener('input', renderTable);
   statusFilter.addEventListener('change', renderTable);
+  situationFilter?.addEventListener('change', renderTable);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && currentUser) loadOrders(true);
+  });
 
   ordersBody.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-action]');
