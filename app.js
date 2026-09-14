@@ -63,11 +63,49 @@
   const metricDone = $('metricDone');
   const toast = $('toast');
 
+
+  const poView = $('poView');
+  const quotesView = $('quotesView');
+  const modeTabs = [...document.querySelectorAll('.mode-tab')];
+  const quoteNavBadge = $('quoteNavBadge');
+  const quoteSetup = $('quoteSetup');
+  const newQuoteBtn = $('newQuoteBtn');
+  const refreshQuotesBtn = $('refreshQuotesBtn');
+  const quoteModal = $('quoteModal');
+  const closeQuoteModalBtn = $('closeQuoteModalBtn');
+  const cancelQuoteBtn = $('cancelQuoteBtn');
+  const quoteForm = $('quoteForm');
+  const quoteModalTitle = $('quoteModalTitle');
+  const quoteFormError = $('quoteFormError');
+  const saveQuoteBtn = $('saveQuoteBtn');
+  const quoteId = $('quoteId');
+  const quoteReference = $('quoteReference');
+  const quoteSupplier = $('quoteSupplier');
+  const quoteClient = $('quoteClient');
+  const quoteSentAt = $('quoteSentAt');
+  const quoteTargetHours = $('quoteTargetHours');
+  const quoteResponseAt = $('quoteResponseAt');
+  const quoteOwner = $('quoteOwner');
+  const quoteNotes = $('quoteNotes');
+  const qWaiting = $('qWaiting');
+  const qOnTime = $('qOnTime');
+  const qAttention = $('qAttention');
+  const qLate = $('qLate');
+  const qAverage = $('qAverage');
+  const quoteAttentionList = $('quoteAttentionList');
+  const quoteSearch = $('quoteSearch');
+  const quoteStatusFilter = $('quoteStatusFilter');
+  const quoteRows = $('quoteRows');
+
   let db = null;
   let currentUser = null;
   let orders = [];
   let refreshTimer = null;
   let loadingOrders = false;
+  let quotes = [];
+  let loadingQuotes = false;
+  let quotesTableAvailable = true;
+  let activeMode = 'pos';
 
   function showMessage(el, text, type = 'error') {
     el.textContent = text;
@@ -188,6 +226,16 @@
     savePoBtn.textContent = 'Salvar PO';
   }
 
+
+
+  function showMode(mode) {
+    activeMode = mode === 'quotes' ? 'quotes' : 'pos';
+    poView.classList.toggle('hidden', activeMode !== 'pos');
+    quotesView.classList.toggle('hidden', activeMode !== 'quotes');
+    modeTabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === activeMode));
+    if (activeMode === 'quotes') loadQuotes(true);
+  }
+
   function setAuthView(user) {
     currentUser = user || null;
     if (refreshTimer) {
@@ -199,15 +247,18 @@
       appPage.classList.remove('hidden');
       userEmail.textContent = currentUser.email || '';
       loadOrders();
+      loadQuotes(true);
       // Atualização automática: mantém o dashboard próximo do tempo real sem precisar F5.
       refreshTimer = setInterval(() => {
-        if (currentUser && !document.hidden) loadOrders(true);
+        if (currentUser && !document.hidden) { loadOrders(true); loadQuotes(true); }
       }, 30000);
     } else {
       appPage.classList.add('hidden');
       authPage.classList.remove('hidden');
       orders = [];
+      quotes = [];
       render();
+      renderQuotes();
     }
   }
 
@@ -778,6 +829,281 @@
     }
   }
 
+
+
+  function formatDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function datetimeLocalValue(value = null) {
+    const d = value ? new Date(value) : new Date();
+    if (Number.isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function hoursLabel(hours) {
+    if (!Number.isFinite(hours)) return '—';
+    const h = Math.max(0, hours);
+    if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
+    if (h < 48) return `${h.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h`;
+    return `${(h / 24).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`;
+  }
+
+  function quoteTiming(q) {
+    const sent = new Date(q.sent_at).getTime();
+    const target = Number(q.target_hours || 24);
+    const deadline = sent + target * 3600000;
+    const end = q.response_at ? new Date(q.response_at).getTime() : Date.now();
+    const elapsed = Math.max(0, (end - sent) / 3600000);
+    const remaining = (deadline - Date.now()) / 3600000;
+    if (q.response_at) {
+      return elapsed <= target
+        ? { key:'answered', label:'Respondida no prazo', cls:'ok', elapsed, remaining, deadline }
+        : { key:'answered', label:'Respondida com atraso', cls:'answered-late', elapsed, remaining, deadline };
+    }
+    if (remaining < 0) return { key:'late', label:`Atrasada ${hoursLabel(Math.abs(remaining))}`, cls:'danger', elapsed, remaining, deadline };
+    if (remaining <= 4) return { key:'attention', label:`Atenção • ${hoursLabel(remaining)} restantes`, cls:'attention', elapsed, remaining, deadline };
+    return { key:'ontime', label:`Dentro do prazo • ${hoursLabel(remaining)} restantes`, cls:'ok', elapsed, remaining, deadline };
+  }
+
+  function renderQuoteSetup(message = '') {
+    if (!quoteSetup) return;
+    if (!message) {
+      quoteSetup.classList.add('hidden');
+      quoteSetup.textContent = '';
+      return;
+    }
+    quoteSetup.textContent = message;
+    quoteSetup.classList.remove('hidden');
+  }
+
+  async function loadQuotes(quiet = false) {
+    if (!currentUser || loadingQuotes) return;
+    loadingQuotes = true;
+    try {
+      const { data, error } = await db
+        .from('china_quotes')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('sent_at', { ascending: false });
+
+      if (error) {
+        quotes = [];
+        quotesTableAvailable = false;
+        renderQuoteSetup('Cotações China ainda não foram ativadas no Supabase. Rode o arquivo migration_china_quotes.sql uma vez no SQL Editor.');
+        renderQuotes();
+        if (!quiet && !/relation|china_quotes|user_id/i.test(error.message)) showToast(`Erro ao carregar cotações: ${error.message}`, true, 6000);
+        return;
+      }
+      quotesTableAvailable = true;
+      renderQuoteSetup('');
+      quotes = data || [];
+      renderQuotes();
+    } finally {
+      loadingQuotes = false;
+    }
+  }
+
+  function renderQuoteMetrics() {
+    const pending = quotes.filter((q) => !q.response_at);
+    const answered = quotes.filter((q) => q.response_at);
+    qWaiting.textContent = pending.length;
+    qOnTime.textContent = pending.filter((q) => quoteTiming(q).key === 'ontime').length;
+    qAttention.textContent = pending.filter((q) => quoteTiming(q).key === 'attention').length;
+    qLate.textContent = pending.filter((q) => quoteTiming(q).key === 'late').length;
+    const avg = answered.length ? answered.reduce((sum, q) => sum + quoteTiming(q).elapsed, 0) / answered.length : null;
+    qAverage.textContent = avg === null ? '—' : hoursLabel(avg);
+    const urgent = pending.filter((q) => ['attention','late'].includes(quoteTiming(q).key)).length;
+    quoteNavBadge.textContent = urgent;
+    quoteNavBadge.classList.toggle('hidden', urgent === 0);
+  }
+
+  function renderQuoteAttention() {
+    const list = quotes
+      .filter((q) => !q.response_at)
+      .map((q) => ({ quote:q, timing:quoteTiming(q) }))
+      .filter((x) => ['attention','late'].includes(x.timing.key))
+      .sort((a,b) => a.timing.remaining - b.timing.remaining)
+      .slice(0, 8);
+
+    if (!list.length) {
+      quoteAttentionList.innerHTML = '<div class="empty">Nenhuma cotação precisa de atenção agora. ✅</div>';
+      return;
+    }
+    quoteAttentionList.innerHTML = list.map(({quote, timing}) => `
+      <div class="alert-row">
+        <div>
+          <strong>${escapeHtml(quote.reference)} — ${escapeHtml(quote.supplier)}</strong>
+          <small>Enviada: ${formatDateTime(quote.sent_at)} • Meta: ${quote.target_hours}h${quote.client ? ` • ${escapeHtml(quote.client)}` : ''}</small>
+        </div>
+        <span class="badge ${timing.cls}">${timing.label}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderQuoteTable() {
+    const search = (quoteSearch?.value || '').trim().toLowerCase();
+    const filter = quoteStatusFilter?.value || '';
+    let list = quotes.filter((q) => {
+      const text = [q.reference, q.supplier, q.client, q.owner, q.notes].filter(Boolean).join(' ').toLowerCase();
+      const timing = quoteTiming(q);
+      const statusOk = !filter ||
+        (filter === 'answered' && !!q.response_at) ||
+        (!q.response_at && timing.key === filter);
+      return (!search || text.includes(search)) && statusOk;
+    });
+
+    const priority = { late:0, attention:1, ontime:2, answered:3 };
+    list.sort((a,b) => {
+      const ah = quoteTiming(a), bh = quoteTiming(b);
+      const p = (priority[ah.key] ?? 9) - (priority[bh.key] ?? 9);
+      if (p) return p;
+      if (!a.response_at && !b.response_at) return ah.remaining - bh.remaining;
+      return new Date(b.sent_at) - new Date(a.sent_at);
+    });
+
+    if (!list.length) {
+      quoteRows.innerHTML = `<tr><td colspan="10" class="empty">${quotesTableAvailable ? 'Nenhuma cotação encontrada.' : 'Ative a tabela china_quotes no Supabase.'}</td></tr>`;
+      return;
+    }
+
+    quoteRows.innerHTML = list.map((q) => {
+      const t = quoteTiming(q);
+      const rowClass = t.key === 'late' ? 'quote-row-late' : (t.key === 'attention' ? 'quote-row-attention' : '');
+      return `<tr class="${rowClass}">
+        <td><button class="po-link" data-quote-action="edit" data-id="${q.id}">${escapeHtml(q.reference)}</button></td>
+        <td>${escapeHtml(q.supplier)}</td>
+        <td>${escapeHtml(q.client || '—')}</td>
+        <td>${formatDateTime(q.sent_at)}<span class="quote-deadline">Prazo: ${formatDateTime(new Date(t.deadline).toISOString())}</span></td>
+        <td>${Number(q.target_hours || 24)}h</td>
+        <td>${formatDateTime(q.response_at)}</td>
+        <td>${hoursLabel(t.elapsed)}</td>
+        <td><span class="badge ${t.cls}">${t.label}</span></td>
+        <td>${escapeHtml(q.owner || '—')}</td>
+        <td><div class="actions">
+          ${!q.response_at ? `<button class="btn btn-primary btn-small" data-quote-action="answered" data-id="${q.id}">Respondida</button>` : ''}
+          <button class="btn btn-secondary btn-small" data-quote-action="edit" data-id="${q.id}">Editar</button>
+          <button class="btn btn-danger btn-small" data-quote-action="delete" data-id="${q.id}">Excluir</button>
+        </div></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderQuotes() {
+    if (!qWaiting) return;
+    renderQuoteMetrics();
+    renderQuoteAttention();
+    renderQuoteTable();
+  }
+
+  function openQuoteModal(q = null) {
+    if (!quotesTableAvailable) {
+      showToast('Primeiro rode migration_china_quotes.sql no Supabase.', true, 6000);
+      return;
+    }
+    quoteForm.reset();
+    hideMessage(quoteFormError);
+    quoteId.value = '';
+    quoteSentAt.value = datetimeLocalValue();
+    quoteTargetHours.value = '24';
+    quoteResponseAt.value = '';
+    quoteModalTitle.textContent = 'Nova cotação China';
+    if (q) {
+      quoteModalTitle.textContent = 'Editar cotação China';
+      quoteId.value = q.id;
+      quoteReference.value = q.reference || '';
+      quoteSupplier.value = q.supplier || '';
+      quoteClient.value = q.client || '';
+      quoteSentAt.value = datetimeLocalValue(q.sent_at);
+      quoteTargetHours.value = String(q.target_hours || 24);
+      quoteResponseAt.value = q.response_at ? datetimeLocalValue(q.response_at) : '';
+      quoteOwner.value = q.owner || '';
+      quoteNotes.value = q.notes || '';
+    }
+    quoteModal.classList.remove('hidden');
+    setTimeout(() => quoteReference.focus(), 50);
+  }
+
+  function closeQuoteModal() {
+    quoteModal.classList.add('hidden');
+    quoteForm.reset();
+    hideMessage(quoteFormError);
+    saveQuoteBtn.disabled = false;
+    saveQuoteBtn.textContent = 'Salvar cotação';
+  }
+
+  async function handleSaveQuote(event) {
+    event.preventDefault();
+    hideMessage(quoteFormError);
+    if (!currentUser) return;
+    if (!quoteReference.value.trim() || !quoteSupplier.value.trim() || !quoteSentAt.value || !quoteTargetHours.value) {
+      showMessage(quoteFormError, 'Preencha Referência, Fornecedor, Enviada em e Meta de resposta.');
+      return;
+    }
+    const sent = new Date(quoteSentAt.value);
+    const response = quoteResponseAt.value ? new Date(quoteResponseAt.value) : null;
+    if (response && response < sent) {
+      showMessage(quoteFormError, 'A resposta não pode ser anterior ao envio.');
+      return;
+    }
+    saveQuoteBtn.disabled = true;
+    saveQuoteBtn.textContent = 'Salvando...';
+    const isEditing = Boolean(quoteId.value);
+    const payload = {
+      user_id: currentUser.id,
+      reference: quoteReference.value.trim(),
+      supplier: quoteSupplier.value.trim(),
+      client: quoteClient.value.trim() || null,
+      sent_at: sent.toISOString(),
+      target_hours: Math.max(1, Number(quoteTargetHours.value || 24)),
+      response_at: response ? response.toISOString() : null,
+      owner: quoteOwner.value.trim() || null,
+      notes: quoteNotes.value.trim() || null,
+      updated_at: new Date().toISOString()
+    };
+    try {
+      let result;
+      if (isEditing) {
+        result = await db.from('china_quotes').update(payload).eq('id', quoteId.value).eq('user_id', currentUser.id);
+      } else {
+        result = await db.from('china_quotes').insert(payload);
+      }
+      if (result.error) throw result.error;
+      closeQuoteModal();
+      showToast(isEditing ? 'Cotação atualizada.' : 'Cotação cadastrada.');
+      await loadQuotes();
+    } catch (err) {
+      showMessage(quoteFormError, `Não foi possível salvar: ${err.message || err}`);
+    } finally {
+      saveQuoteBtn.disabled = false;
+      saveQuoteBtn.textContent = 'Salvar cotação';
+    }
+  }
+
+  async function markQuoteAnswered(id) {
+    if (!currentUser) return;
+    const { error } = await db.from('china_quotes')
+      .update({ response_at:new Date().toISOString(), updated_at:new Date().toISOString() })
+      .eq('id', id).eq('user_id', currentUser.id);
+    if (error) { showToast(`Erro ao registrar resposta: ${error.message}`, true); return; }
+    showToast('Resposta registrada.');
+    await loadQuotes();
+  }
+
+  async function deleteQuote(id) {
+    const q = quotes.find((x) => x.id === id);
+    if (!q || !currentUser) return;
+    if (!confirm(`Excluir a cotação ${q.reference}?`)) return;
+    const { error } = await db.from('china_quotes').delete().eq('id', id).eq('user_id', currentUser.id);
+    if (error) { showToast(`Erro ao excluir: ${error.message}`, true); return; }
+    showToast('Cotação excluída.');
+    await loadQuotes();
+  }
+
   async function init() {
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
       showMessage(authMessage, 'Configuração do Supabase ausente em config.js.');
@@ -827,7 +1153,28 @@
   situationFilter?.addEventListener('change', renderTable);
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && currentUser) loadOrders(true);
+    if (!document.hidden && currentUser) { loadOrders(true); loadQuotes(true); }
+  });
+
+
+  modeTabs.forEach((btn) => btn.addEventListener('click', () => showMode(btn.dataset.mode)));
+  newQuoteBtn?.addEventListener('click', () => openQuoteModal());
+  refreshQuotesBtn?.addEventListener('click', () => loadQuotes());
+  closeQuoteModalBtn?.addEventListener('click', closeQuoteModal);
+  cancelQuoteBtn?.addEventListener('click', closeQuoteModal);
+  quoteModal?.addEventListener('click', (event) => { if (event.target === quoteModal) closeQuoteModal(); });
+  quoteForm?.addEventListener('submit', handleSaveQuote);
+  quoteSearch?.addEventListener('input', renderQuoteTable);
+  quoteStatusFilter?.addEventListener('change', renderQuoteTable);
+  quoteRows?.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-quote-action]');
+    if (!button) return;
+    const id = button.dataset.id;
+    const action = button.dataset.quoteAction;
+    const q = quotes.find((x) => x.id === id);
+    if (action === 'edit' && q) openQuoteModal(q);
+    if (action === 'answered') await markQuoteAnswered(id);
+    if (action === 'delete') await deleteQuote(id);
   });
 
   ordersBody.addEventListener('click', async (event) => {

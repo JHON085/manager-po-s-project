@@ -48,6 +48,12 @@
     </header>
 
     <main class="container">
+      <nav class="mode-tabs" aria-label="Áreas do sistema">
+        <button type="button" class="mode-tab active" data-mode="pos">📦 Pedidos / FOLLOW UP</button>
+        <button type="button" class="mode-tab" data-mode="quotes">⏱ Cotações China <span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
+      </nav>
+
+      <section id="poView" class="mode-view">
       <div class="page-head">
         <div>
           <h1>Dashboard</h1>
@@ -104,6 +110,58 @@
           </table>
         </div>
       </section>
+
+      </section>
+
+      <section id="quotesView" class="mode-view hidden">
+        <div class="page-head">
+          <div>
+            <h1>Cotações China</h1>
+            <p>Acompanhe o tempo de resposta das RFQs enviadas aos fornecedores da China.</p>
+          </div>
+          <div class="page-actions">
+            <button id="refreshQuotesBtn" type="button" class="btn btn-secondary">Atualizar</button>
+            <button id="newQuoteBtn" type="button" class="btn btn-primary">+ Nova cotação</button>
+          </div>
+        </div>
+
+        <div id="quoteSetup" class="message warning-message hidden"></div>
+
+        <section class="metrics quote-metrics">
+          <div class="metric"><div class="label">Aguardando</div><div id="qWaiting" class="value">0</div><div class="hint">Ainda sem resposta</div></div>
+          <div class="metric success"><div class="label">Dentro do prazo</div><div id="qOnTime" class="value">0</div><div class="hint">Mais de 4h restantes</div></div>
+          <div class="metric warning"><div class="label">Atenção</div><div id="qAttention" class="value">0</div><div class="hint">Até 4h para vencer</div></div>
+          <div class="metric danger"><div class="label">Atrasadas</div><div id="qLate" class="value">0</div><div class="hint">Meta de resposta estourou</div></div>
+          <div class="metric done"><div class="label">Tempo médio</div><div id="qAverage" class="value small-value">—</div><div class="hint">Das já respondidas</div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h3>⚠ Cotações que precisam de atenção</h3></div>
+          <div id="quoteAttentionList" class="alert-list"><div class="empty">Nenhuma cotação precisa de atenção agora. ✅</div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h3>Controle de cotações</h3>
+            <div class="filters">
+              <input id="quoteSearch" type="search" placeholder="Buscar referência, fornecedor, cliente..." />
+              <select id="quoteStatusFilter">
+                <option value="">Todas as situações</option>
+                <option value="ontime">Dentro do prazo</option>
+                <option value="attention">Atenção (até 4h)</option>
+                <option value="late">Atrasadas</option>
+                <option value="answered">Respondidas</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="quote-table">
+              <thead><tr><th>Referência</th><th>Fornecedor</th><th>Cliente</th><th>Enviada</th><th>Meta</th><th>Resposta</th><th>Tempo</th><th>Situação</th><th>Responsável</th><th>Ações</th></tr></thead>
+              <tbody id="quoteRows"><tr><td colspan="10" class="empty">Carregando...</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
     </main>
   </section>
 
@@ -149,6 +207,36 @@
           <div class="modal-actions">
             <button id="cancelPoBtn" type="button" class="btn btn-secondary">Cancelar</button>
             <button id="savePoBtn" type="submit" class="btn btn-primary">Salvar PO</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="quoteModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal quote-modal">
+      <div class="modal-head">
+        <h3 id="quoteModalTitle">Nova cotação China</h3>
+        <button id="closeQuoteModalBtn" type="button" class="icon-btn" aria-label="Fechar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="quoteForm" novalidate>
+          <input id="quoteId" type="hidden" />
+          <div class="form-grid">
+            <div class="field"><label for="quoteReference">Referência / RFQ *</label><input id="quoteReference" required placeholder="Ex.: RFQ-2026-014" /></div>
+            <div class="field"><label for="quoteSupplier">Fornecedor / contato China *</label><input id="quoteSupplier" required placeholder="Ex.: Terminexus China" /></div>
+            <div class="field"><label for="quoteClient">Cliente</label><input id="quoteClient" placeholder="Ex.: Santos Brasil" /></div>
+            <div class="field"><label for="quoteSentAt">Enviada em *</label><input id="quoteSentAt" type="datetime-local" required /></div>
+            <div class="field"><label for="quoteTargetHours">Meta de resposta (horas) *</label><input id="quoteTargetHours" type="number" min="1" step="1" value="24" required /></div>
+            <div class="field"><label for="quoteResponseAt">Respondida em</label><input id="quoteResponseAt" type="datetime-local" /></div>
+            <div class="field"><label for="quoteOwner">Responsável</label><input id="quoteOwner" placeholder="Ex.: João" /></div>
+            <div class="field span-2"><label for="quoteNotes">Observações / itens cotados</label><textarea id="quoteNotes" placeholder="Ex.: Aguardando preço e lead time da fábrica"></textarea></div>
+          </div>
+          <div id="quoteFormError" class="message error form-error hidden"></div>
+          <div class="modal-actions">
+            <button id="cancelQuoteBtn" type="button" class="btn btn-secondary">Cancelar</button>
+            <button id="saveQuoteBtn" type="submit" class="btn btn-primary">Salvar cotação</button>
           </div>
         </form>
       </div>

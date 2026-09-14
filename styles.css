@@ -143,3 +143,23 @@ tr:last-child td { border-bottom:0; }
 .extra-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-top:14px; }
 @media (max-width: 900px) { .extra-grid { grid-template-columns:1fr 1fr; } }
 @media (max-width: 650px) { .page-actions { width:100%; } .page-actions .btn { flex:1; } .extra-grid { grid-template-columns:1fr; } }
+
+
+/* ===== Navegação por modalidades ===== */
+.mode-tabs { display:flex; gap:8px; margin-bottom:22px; border-bottom:1px solid var(--border); padding-bottom:10px; overflow:auto; }
+.mode-tab { border:1px solid var(--border); background:#fff; color:#475467; padding:10px 14px; border-radius:10px; font-weight:800; white-space:nowrap; }
+.mode-tab.active { background:#0f1f35; color:#fff; border-color:#0f1f35; }
+.nav-badge { display:inline-grid; place-items:center; min-width:20px; height:20px; padding:0 6px; margin-left:5px; border-radius:999px; background:#f04438; color:white; font-size:11px; }
+
+/* ===== Cotações China ===== */
+.quote-table { min-width:1320px; }
+.small-value { font-size:24px !important; }
+.warning-message { color:#9a6700; background:#fffaeb; border:1px solid #fedf89; margin-bottom:18px; }
+.quote-row-late { background:#fff8f7; }
+.quote-row-attention { background:#fffdf5; }
+.quote-deadline { display:block; color:var(--muted); font-size:11px; margin-top:3px; }
+.quote-meta { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.badge.attention { color:var(--warning); background:var(--warning-bg); }
+.badge.answered-late { color:#b54708; background:#fffaeb; }
+.quote-modal { width:min(980px,100%); }
+@media (max-width:650px) { .mode-tabs { margin-bottom:16px; } .mode-tab { flex:1; } }
