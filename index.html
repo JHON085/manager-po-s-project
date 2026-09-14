@@ -392,7 +392,7 @@ function alertHtml(o){const h=health(o);return `<div class="alert-item"><div><st
 function renderAttention(){const list=orders.filter(o=>['late','today','near'].includes(health(o).key)).sort((a,b)=>(health(a).days??999)-(health(b).days??999));attentionList.innerHTML=list.length?list.map(alertHtml).join(''):'<div class="empty">Tudo sob controle. Nenhum PO precisa de atenção. ✅</div>'}
 function renderOrders(){const q=(searchFilter?.value||'').toLowerCase(),sf=statusFilter?.value||'',hf=healthFilter?.value||'',sort=sortFilter?.value||'readinessAsc';let list=orders.filter(o=>[o.poNumber,o.supplier,o.client,o.origin,o.owner].join(' ').toLowerCase().includes(q)).filter(o=>!sf||o.status===sf).filter(o=>!hf||health(o).key===hf);list.sort((a,b)=>{if(sort==='createdDesc')return new Date(b.createdAt)-new Date(a.createdAt);if(sort==='poAsc')return a.poNumber.localeCompare(b.poNumber);const av=parseLocalDate(a.estimatedReady)?.getTime()||9e15,bv=parseLocalDate(b.estimatedReady)?.getTime()||9e15;return sort==='readinessDesc'?bv-av:av-bv});orderRows.innerHTML=list.length?list.map(o=>{const h=health(o);return `<tr><td><button class="linkbtn" onclick="openDetail('${o.id}')">${escapeHtml(o.poNumber)}</button></td><td>${escapeHtml(o.supplier)}</td><td>${escapeHtml(o.client||'—')}</td><td>${escapeHtml(o.origin||'—')}</td><td>${escapeHtml(o.incoterm||'—')}</td><td>${fmtDate(o.estimatedReady)}</td><td>${escapeHtml(o.status)}</td><td><span class="badge ${h.cls}">${h.label}</span></td><td>${escapeHtml(o.owner||'—')}</td><td><div class="actions"><button class="secondary" onclick="openDetail('${o.id}')">Abrir</button><button class="secondary" onclick="openForm('${o.id}')">Editar</button></div></td></tr>`}).join(''):'<tr><td colspan="10" class="empty">Nenhum PO encontrado.</td></tr>'}
 function openDetail(id){const o=orders.find(x=>x.id===id);if(!o)return;const h=health(o);detailTitle.textContent=`${o.poNumber} • ${o.supplier}`;const hist=(o.history||[]).map(x=>`<div class="history-item">${historyText(x)}<small>${escapeHtml(x.at||'')}</small></div>`).join('')||'<div class="empty">Sem histórico.</div>';detailBody.innerHTML=`<div class="actions" style="justify-content:flex-end;margin-bottom:14px"><button class="secondary" onclick="closeModal('detailModal');openForm('${o.id}')">Editar</button>${!finalStatuses.includes(o.status)?`<button class="primary" onclick="markReady('${o.id}')">Marcar como pronto</button>`:''}<button class="danger" onclick="deletePO('${o.id}')">Excluir</button></div><div class="detail-grid"><div class="detail-box"><h3>Pedido</h3><div class="kv"><span>Situação</span><strong><span class="badge ${h.cls}">${h.label}</span></strong></div><div class="kv"><span>Status</span><strong>${escapeHtml(o.status)}</strong></div><div class="kv"><span>Fornecedor</span><strong>${escapeHtml(o.supplier)}</strong></div><div class="kv"><span>Cliente</span><strong>${escapeHtml(o.client||'—')}</strong></div><div class="kv"><span>Origem</span><strong>${escapeHtml(o.origin||'—')}</strong></div><div class="kv"><span>Incoterm</span><strong>${escapeHtml(o.incoterm||'—')}</strong></div><div class="kv"><span>Responsável</span><strong>${escapeHtml(o.owner||'—')}</strong></div></div><div class="detail-box"><h3>Datas</h3><div class="kv"><span>Pedido</span><strong>${fmtDate(o.orderDate)}</strong></div><div class="kv"><span>Prontidão prevista</span><strong>${fmtDate(o.estimatedReady)}</strong></div><div class="kv"><span>Prontidão real</span><strong>${fmtDate(o.actualReady)}</strong></div><div class="kv"><span>Última atualização</span><strong>${new Date(o.updatedAt||o.createdAt).toLocaleString('pt-BR')}</strong></div></div><div class="detail-box span-2"><h3>Observações</h3><div style="white-space:pre-wrap;font-size:13px">${escapeHtml(o.notes||'Sem observações.')}</div></div><div class="detail-box span-2"><h3>Histórico</h3><div class="history">${hist}</div></div></div>`;document.getElementById('detailModal').classList.add('open')}
-function historyText(x){if(x.type==='created')return'PO cadastrado';if(x.type==='readiness')return`Prontidão alterada de <strong>${fmtDate(x.from)}</strong> para <strong>${fmtDate(x.to)}</strong>`;if(x.type==='status')return`Status alterado de <strong>${escapeHtml(x.from)}</strong> para <strong>${escapeHtml(x.to)}</strong>`;if(x.type==='actualReady')return`Prontidão real informada: <strong>${fmtDate(x.to)}</strong>`;return'Atualização'}
+function historyText(x){if(x.type==='created')return'PO cadastrado';if(x.type==='excel')return'Dados sincronizados da planilha FOLLOW UP';if(x.type==='readiness')return`Prontidão alterada de <strong>${fmtDate(x.from)}</strong> para <strong>${fmtDate(x.to)}</strong>`;if(x.type==='status')return`Status alterado de <strong>${escapeHtml(x.from)}</strong> para <strong>${escapeHtml(x.to)}</strong>`;if(x.type==='actualReady')return`Prontidão real informada: <strong>${fmtDate(x.to)}</strong>`;return'Atualização'}
 function exportJSON(){const blob=new Blob([JSON.stringify(orders,null,2)],{type:'application/json'});downloadBlob(blob,`po-control-backup-${isoToday()}.json`)}
 function exportCSV(){const headers=['PO','Fornecedor','Cliente','Origem','Incoterm','Data Pedido','Prontidão Estimada','Prontidão Real','Status','Situação','Responsável','Observações'];const rows=orders.map(o=>[o.poNumber,o.supplier,o.client,o.origin,o.incoterm,o.orderDate,o.estimatedReady,o.actualReady,o.status,health(o).label,o.owner,o.notes]);const csv=[headers,...rows].map(r=>r.map(v=>'"'+String(v||'').replaceAll('"','""')+'"').join(';')).join('\n');downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),`po-control-${isoToday()}.csv`)}
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
@@ -404,9 +404,9 @@ const EXCEL_ALIASES={
   supplier:['fornecedor','supplier','vendor','factory','fabricante'],
   client:['cliente','client','customer','consignee'],
   origin:['origem','origin','porto origem','port of loading','pol'],
-  incoterm:['incoterm','incoterms','termo','trade term'],
-  orderDate:['data pedido','data do pedido','order date','po date','data po'],
-  estimatedReady:['prontidao estimada','estimativa de prontidao','estimated ready','estimated ready date','ready date','cargo ready date','crd','data prevista','previsao prontidao','delivery date'],
+  incoterm:['incoterm','incoterms','termo','trade term','transportation'],
+  orderDate:['data pedido','data do pedido','order date','po date','data po','po received'],
+  estimatedReady:['prontidao estimada','estimativa de prontidao','estimated ready','estimated ready date','ready date','cargo ready date','crd','data prevista','previsao prontidao','delivery date','promised delivery time quotation','promised delivery time'],
   actualReady:['prontidao real','actual ready','actual ready date','data real','ready actual'],
   status:['status','situacao','situation'],
   owner:['responsavel','owner','pic','responsible'],
@@ -442,11 +442,14 @@ function excelDateToIso(value){
 function normalizeImportedStatus(value){
   const s=normalizeExcelHeader(value);
   if(!s)return'Em produção';
+  // Regras específicas da planilha FOLLOW UP.xlsm.
+  if(s.includes('docs recebidos')&&s.includes('enviado ao cliente'))return'Concluído';
   if(s.includes('cancel'))return'Cancelado';
   if(s.includes('conclu')||s.includes('complete')||s.includes('finaliz'))return'Concluído';
-  if(s.includes('embarc')||s.includes('shipped'))return'Embarcado';
-  if(s==='pronto'||s.includes('ready'))return'Pronto';
-  if(s.includes('aguard'))return'Aguardando produção';
+  if(s.includes('embarc')||s.includes('shipped'))return'Concluído';
+  if(s==='pronto'||s==='ready')return'Concluído';
+  // Estes status da FOLLOW UP continuam sendo POs ativos no dashboard.
+  if(s.includes('em producao')||s.includes('ag prontidao')||s.includes('cobranca')||s.includes('pendencia documental')||s.includes('realizar cobranca')||s.includes('checar'))return'Em produção';
   return'Em produção';
 }
 async function importExcel(e){
@@ -470,6 +473,8 @@ async function importExcel(e){
         const estimated=excelDateToIso(excelValue(r,headers,'estimatedReady'));
         const orderDate=excelDateToIso(excelValue(r,headers,'orderDate'));
         const actualReady=excelDateToIso(excelValue(r,headers,'actualReady'));
+        const workflowStatus=String(excelValue(r,headers,'status')??'').trim();
+        const sheetNotes=String(excelValue(r,headers,'notes')??'').trim();
         return{
           id:uid(),poNumber:po,supplier,
           client:String(excelValue(r,headers,'client')??'').trim(),
@@ -477,8 +482,8 @@ async function importExcel(e){
           incoterm:String(excelValue(r,headers,'incoterm')??'').trim().toUpperCase(),
           owner:String(excelValue(r,headers,'owner')??'').trim(),
           orderDate,estimatedReady:estimated,actualReady,
-          status:normalizeImportedStatus(excelValue(r,headers,'status')),
-          notes:String(excelValue(r,headers,'notes')??'').trim(),
+          status:normalizeImportedStatus(workflowStatus),
+          notes:sheetNotes||(workflowStatus?`Status na planilha: ${workflowStatus}`:''),
           createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
           history:[{type:'created',at:nowLabel(),source:'excel'}]
         };
@@ -486,22 +491,45 @@ async function importExcel(e){
       if(mapped.length){parsed=mapped;sheetUsed=sheetName;break}
     }
     if(!parsed.length)throw new Error('Não encontrei uma tabela com coluna de PO no arquivo.');
-    const seen=new Set(),deduped=[];
-    for(const o of parsed){const k=o.poNumber.toLowerCase();if(!seen.has(k)){seen.add(k);deduped.push(o)}}
+    // Na FOLLOW UP existem alguns POs repetidos. Mantemos a ocorrência mais recente da planilha.
+    const latestByPO=new Map();
+    for(const o of parsed)latestByPO.set(o.poNumber.toLowerCase(),o);
+    const deduped=[...latestByPO.values()];
     const existing=new Map(orders.map(o=>[o.poNumber.toLowerCase(),o]));
     const newRows=deduped.filter(o=>!existing.has(o.poNumber.toLowerCase()));
-    const duplicateCount=deduped.length-newRows.length;
-    const noReady=newRows.filter(o=>!o.estimatedReady).length;
-    const msg=`Arquivo: ${f.name}\nAba encontrada: ${sheetUsed}\nPOs encontrados: ${deduped.length}\nNovos POs: ${newRows.length}\nJá existentes (serão ignorados): ${duplicateCount}${noReady?`\nSem data de prontidão: ${noReady}`:''}\n\nImportar os novos POs para o Supabase?`;
+    const updateRows=deduped.filter(o=>existing.has(o.poNumber.toLowerCase()));
+    const activeRows=deduped.filter(o=>o.status!=='Concluído'&&o.status!=='Cancelado');
+    const noReady=activeRows.filter(o=>!o.estimatedReady).length;
+    const msg=`Arquivo: ${f.name}\nAba encontrada: ${sheetUsed}\nPOs únicos encontrados: ${deduped.length}\nNovos POs: ${newRows.length}\nPOs já existentes que serão ATUALIZADOS: ${updateRows.length}${noReady?`\nPOs ativos sem data de prontidão: ${noReady}`:''}\n\nA data de prontidão será lida de "Promised delivery time Quotation". Continuar?`;
     if(!confirm(msg))return;
-    if(!newRows.length){toast('Nenhum PO novo para importar');return}
-    // Inserção em lotes para arquivos grandes.
+    setSync(true,'Atualizando POs do Excel...');
+
+    // Atualiza os POs já importados para corrigir prontidão e situação no dashboard.
+    // O primeiro update é separado para o modo adaptativo descobrir colunas antigas do Supabase.
+    if(updateRows.length){
+      const first=updateRows[0],old=existing.get(first.poNumber.toLowerCase());
+      const merged={...first,id:old.id,createdAt:old.createdAt||first.createdAt,history:[{type:'excel',at:nowLabel()},...(old.history||[])]};
+      const firstError=await updatePOCompat(merged,old.id);if(firstError)throw firstError;
+      const rest=updateRows.slice(1);
+      for(let i=0;i<rest.length;i+=25){
+        const batch=rest.slice(i,i+25);
+        const results=await Promise.all(batch.map(async o=>{
+          const oldRow=existing.get(o.poNumber.toLowerCase());
+          const mergedRow={...o,id:oldRow.id,createdAt:oldRow.createdAt||o.createdAt,history:[{type:'excel',at:nowLabel()},...(oldRow.history||[])]};
+          return await updatePOCompat(mergedRow,oldRow.id);
+        }));
+        const failure=results.find(Boolean);if(failure)throw failure;
+      }
+    }
+
+    // Insere apenas os que ainda não existem no banco.
     for(let i=0;i<newRows.length;i+=200){
       const batch=newRows.slice(i,i+200);
       const error=await insertPOCompat(batch);if(error)throw error;
     }
     await loadOrders();
-    toast(`${newRows.length} PO${newRows.length!==1?'s':''} importado${newRows.length!==1?'s':''} do Excel`);
+    showView('dashboard');
+    toast(`Excel sincronizado: ${newRows.length} novo${newRows.length!==1?'s':''}, ${updateRows.length} atualizado${updateRows.length!==1?'s':''}`);
   }catch(err){console.error(err);alert('Não foi possível importar o Excel: '+(err?.message||String(err)))}finally{e.target.value=''}
 }
 
