@@ -18,6 +18,7 @@
 
   const newPoBtn = $('newPoBtn');
   const importExcelBtn = $('importExcelBtn');
+  const deleteAllPosBtn = $('deleteAllPosBtn');
   const excelFileInput = $('excelFileInput');
   const poModal = $('poModal');
   const closeModalBtn = $('closeModalBtn');
@@ -559,6 +560,44 @@
       return;
     }
     showToast('PO excluído.');
+    await loadOrders();
+  }
+
+  async function deleteAllOrders() {
+    if (!currentUser) return;
+
+    const total = orders.length;
+    if (!total) {
+      showToast('Não há POs para excluir.');
+      return;
+    }
+
+    const confirmation = prompt(
+      `ATENÇÃO: isso excluirá ${total} PO${total === 1 ? '' : 's'} da sua conta.\n\nAs Cotações China não serão apagadas.\n\nDigite EXCLUIR para confirmar:`
+    );
+
+    if (confirmation !== 'EXCLUIR') {
+      if (confirmation !== null) showToast('Exclusão cancelada. Digite EXCLUIR exatamente para confirmar.', true);
+      return;
+    }
+
+    deleteAllPosBtn.disabled = true;
+    deleteAllPosBtn.textContent = 'Excluindo...';
+
+    const { error } = await db
+      .from('purchase_orders')
+      .delete()
+      .eq('user_id', currentUser.id);
+
+    deleteAllPosBtn.disabled = false;
+    deleteAllPosBtn.textContent = 'Excluir todas as POs';
+
+    if (error) {
+      showToast(`Erro ao excluir todas as POs: ${error.message}`, true);
+      return;
+    }
+
+    showToast(`${total} PO${total === 1 ? '' : 's'} excluída${total === 1 ? '' : 's'} com sucesso.`);
     await loadOrders();
   }
 
@@ -1145,6 +1184,7 @@
 
   newPoBtn.addEventListener('click', () => openModal());
   importExcelBtn.addEventListener('click', () => excelFileInput.click());
+  deleteAllPosBtn?.addEventListener('click', deleteAllOrders);
   excelFileInput.addEventListener('change', async () => {
     const file = excelFileInput.files?.[0];
     if (file) await handleExcelImport(file);
