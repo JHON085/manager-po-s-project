@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PO Control</title>
+  <title>ZPMC • PO Control</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <section id="authPage" class="auth-page">
     <div class="auth-card">
-      <div class="brand">
-        <div class="brand-mark">PO</div>
+      <div class="brand brand-zpmc">
+        <img class="zpmc-logo zpmc-logo-auth" src="./assets/zpmc-logo.png" alt="ZPMC" />
         <div>
           <h1>PO Control</h1>
-          <p>Controle de prontidão e atrasos</p>
+          <p>Follow-up de pedidos e cotações</p>
         </div>
       </div>
       <form id="authForm" class="auth-form" novalidate>
@@ -36,8 +36,9 @@
 
   <section id="appPage" class="app hidden">
     <header class="topbar">
-      <div class="left">
-        <div class="logo">PO</div>
+      <div class="left brand-header">
+        <img class="zpmc-logo zpmc-logo-header" src="./assets/zpmc-logo.png" alt="ZPMC" />
+        <span class="brand-divider"></span>
         <h2>PO Control</h2>
       </div>
       <div class="right">
@@ -49,8 +50,8 @@
 
     <main class="container">
       <nav class="mode-tabs" aria-label="Áreas do sistema">
-        <button type="button" class="mode-tab active" data-mode="pos">📦 Pedidos / FOLLOW UP</button>
-        <button type="button" class="mode-tab" data-mode="quotes">⏱ Cotações China <span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
+        <button type="button" class="mode-tab active" data-mode="pos">Pedidos / FOLLOW UP</button>
+        <button type="button" class="mode-tab" data-mode="quotes">Cotações China <span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
       </nav>
 
       <section id="poView" class="mode-view">
@@ -85,12 +86,9 @@
             <input id="searchInput" type="search" placeholder="Buscar PO, fornecedor, cliente..." />
             <select id="statusFilter">
               <option value="">Todos os status</option>
-              <option>Aguardando produção</option>
-              <option>Em produção</option>
-              <option>Pronto</option>
-              <option>Embarcado</option>
-              <option>Concluído</option>
-              <option>Cancelado</option>
+              <option value="Em produção">Em produção</option>
+              <option value="Concluído">Concluído</option>
+              <option value="Cancelado">Cancelada</option>
             </select>
             <select id="situationFilter">
               <option value="">Todas as situações</option>
@@ -105,7 +103,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>PO</th><th>Fornecedor</th><th>Cliente</th><th>Estimativa</th><th>Status FOLLOW UP</th><th>Situação</th><th>Status sistema</th><th>Ações</th></tr></thead>
+            <thead><tr><th>PO</th><th>Fornecedor</th><th>Cliente</th><th>Estimativa</th><th>Etapa FOLLOW UP</th><th>Situação</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="ordersBody"><tr><td colspan="8" class="empty">Carregando...</td></tr></tbody>
           </table>
         </div>
@@ -184,7 +182,7 @@
             <div class="field"><label for="orderDate">Data do pedido</label><input id="orderDate" type="date" /></div>
             <div class="field"><label for="estimatedReadyDate">Estimativa de prontidão *</label><input id="estimatedReadyDate" type="date" required /></div>
             <div class="field"><label for="actualReadyDate">Prontidão real</label><input id="actualReadyDate" type="date" /></div>
-            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option>Aguardando produção</option><option>Em produção</option><option>Pronto</option><option>Embarcado</option><option>Concluído</option><option>Cancelado</option></select></div>
+            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Em produção">Em produção</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
             <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
 
             <details class="extra-section span-3">

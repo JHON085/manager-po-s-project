@@ -163,3 +163,80 @@ tr:last-child td { border-bottom:0; }
 .badge.answered-late { color:#b54708; background:#fffaeb; }
 .quote-modal { width:min(980px,100%); }
 @media (max-width:650px) { .mode-tabs { margin-bottom:16px; } .mode-tab { flex:1; } }
+
+
+/* ===== ZPMC Minimal v4 ===== */
+:root {
+  --bg:#f7f8fb;
+  --panel:#ffffff;
+  --text:#172033;
+  --muted:#7a8392;
+  --border:#e7eaf0;
+  --primary:#31358f;
+  --primary-dark:#272b78;
+  --shadow:none;
+}
+body { background:var(--bg); }
+.auth-page { background:#f7f8fb; }
+.auth-card { width:min(410px,100%); border-radius:14px; padding:28px; box-shadow:none; }
+.brand-zpmc { align-items:center; gap:14px; }
+.zpmc-logo { display:block; object-fit:contain; background:#fff; }
+.zpmc-logo-auth { width:118px; height:44px; }
+.zpmc-logo-header { width:88px; height:32px; }
+.brand h1 { font-size:21px; font-weight:750; letter-spacing:-.02em; }
+.brand p { font-size:13px; }
+.topbar { height:62px; background:#fff; color:var(--text); border-bottom:1px solid var(--border); padding:0 26px; }
+.topbar .left { gap:10px; }
+.topbar h2 { font-size:15px; font-weight:700; color:#40485a; }
+.brand-divider { width:1px; height:24px; background:var(--border); display:inline-block; }
+.user-email { color:var(--muted); }
+.sync-pill { background:#f3f4f8; color:#596174; border:1px solid var(--border); }
+.container { max-width:1380px; padding:24px 28px 36px; }
+.mode-tabs { gap:24px; padding:0; margin:0 0 24px; border-bottom:1px solid var(--border); }
+.mode-tab { border:0; background:transparent; color:#737b8d; padding:12px 2px 11px; border-radius:0; font-weight:650; border-bottom:2px solid transparent; }
+.mode-tab:hover { color:var(--text); }
+.mode-tab.active { background:transparent; color:var(--primary); border-color:var(--primary); }
+.nav-badge { background:#e5484d; height:18px; min-width:18px; font-size:10px; }
+.page-head { margin-bottom:18px; }
+.page-head h1 { font-size:25px; letter-spacing:-.025em; font-weight:750; }
+.page-head p { font-size:13px; margin-top:5px; }
+.btn { border-radius:8px; padding:9px 13px; font-weight:650; }
+.btn-small { padding:6px 9px; font-size:12px; }
+.btn-primary { background:var(--primary); }
+.btn-secondary { border-color:var(--border); color:#4e5668; }
+.metrics { gap:10px; margin-bottom:14px; }
+.metric { border-radius:10px; padding:14px 15px; }
+.metric .label { font-size:12px; font-weight:650; }
+.metric .value { font-size:27px; margin-top:5px; letter-spacing:-.03em; }
+.metric .hint { font-size:11px; }
+.panel { border-radius:10px; margin-bottom:14px; box-shadow:none; }
+.panel-head { padding:13px 15px; }
+.panel-head h3 { font-size:14px; font-weight:700; }
+.alert-list { padding:10px 14px; gap:7px; }
+.alert-row { border-radius:8px; padding:10px 11px; }
+.alert-row strong { font-size:13px; }
+.alert-row small { font-size:11px; }
+.filters { gap:8px; }
+.filters input,.filters select { min-width:170px; padding:8px 9px; border-radius:8px; font-size:12px; }
+table { min-width:1080px; }
+th,td { padding:11px 12px; font-size:12px; }
+th { background:#fbfbfc; font-size:10px; color:#798195; font-weight:700; }
+tr:hover td { background:#fafbfc; }
+.row-late,.row-near,.quote-row-late,.quote-row-attention { background:transparent; }
+.badge { padding:4px 7px; font-size:11px; border-radius:6px; }
+.badge.status-production { color:#4d566b; background:#f0f2f5; }
+.modal-backdrop { background:rgba(28,35,50,.32); }
+.modal { border-radius:12px; box-shadow:0 18px 55px rgba(31,39,55,.18); }
+.modal-head { padding:14px 17px; }
+.modal-body { padding:17px; }
+.field label { font-size:12px; font-weight:650; }
+input,select,textarea { border-radius:8px; padding:9px 10px; font-size:13px; }
+.extra-section { border-radius:8px; background:#fafbfc; }
+.toast { border-radius:8px; box-shadow:0 12px 30px rgba(22,29,45,.18); }
+@media(max-width:650px){
+  .topbar{height:auto;min-height:60px;padding:10px 14px;}
+  .zpmc-logo-header{width:76px;height:28px;}
+  .container{padding:16px 12px 28px;}
+  .mode-tabs{gap:16px;}
+  .page-head h1{font-size:22px;}
+}

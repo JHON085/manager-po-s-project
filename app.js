@@ -159,13 +159,24 @@
     return `${d}/${m}/${y}`;
   }
 
+  function normalizeSystemStatus(status) {
+    if (status === 'Cancelado' || status === 'Cancelada') return 'Cancelado';
+    if (['Concluído', 'Pronto', 'Embarcado'].includes(status)) return 'Concluído';
+    return 'Em produção';
+  }
+
+  function statusDisplay(status) {
+    const normalized = normalizeSystemStatus(status);
+    return normalized === 'Cancelado' ? 'Cancelada' : normalized;
+  }
+
   function getHealth(order) {
-    if (order.status === 'Cancelado') {
-      return { key: 'done', label: 'Cancelado', cls: 'neutral', days: null };
+    const status = normalizeSystemStatus(order.status);
+    if (status === 'Cancelado') {
+      return { key: 'done', label: 'Cancelada', cls: 'neutral', days: null };
     }
-    if (['Pronto', 'Embarcado', 'Concluído'].includes(order.status) || order.actual_ready_date) {
-      const label = order.status === 'Concluído' ? 'Concluído' : (order.status === 'Embarcado' ? 'Embarcado' : 'Pronto');
-      return { key: 'done', label, cls: 'neutral', days: null };
+    if (status === 'Concluído' || order.actual_ready_date) {
+      return { key: 'done', label: 'Concluído', cls: 'neutral', days: null };
     }
     const days = daysFromToday(order.estimated_ready_date);
     if (days === null) return { key: 'unknown', label: 'Sem data', cls: 'neutral', days: null };
@@ -184,7 +195,7 @@
     hideMessage(formError);
     poId.value = '';
     orderDate.value = todayISO();
-    poStatus.value = 'Aguardando produção';
+    poStatus.value = 'Em produção';
     modalTitle.textContent = 'Novo PO';
 
     if (order) {
@@ -199,7 +210,7 @@
       orderDate.value = order.order_date || '';
       estimatedReadyDate.value = order.estimated_ready_date || '';
       actualReadyDate.value = order.actual_ready_date || '';
-      poStatus.value = order.status || 'Aguardando produção';
+      poStatus.value = normalizeSystemStatus(order.status);
       notes.value = order.notes || '';
 
       currency.value = order.currency || '';
@@ -278,7 +289,7 @@
         return;
       }
 
-      orders = data || [];
+      orders = (data || []).map((row) => ({ ...row, status: normalizeSystemStatus(row.status) }));
       const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSync(`Sincronizado • ${time}`);
       render();
@@ -288,13 +299,13 @@
   }
 
   function renderMetrics() {
-    const active = orders.filter((o) => !['Concluído', 'Cancelado'].includes(o.status));
+    const active = orders.filter((o) => normalizeSystemStatus(o.status) === 'Em produção');
     const health = active.map(getHealth);
     metricActive.textContent = active.length;
     metricOnTime.textContent = health.filter((h) => h.key === 'ontime').length;
     metricNear.textContent = health.filter((h) => h.key === 'near').length;
     metricLate.textContent = health.filter((h) => h.key === 'late').length;
-    if (metricDone) metricDone.textContent = orders.filter((o) => o.status === 'Concluído').length;
+    if (metricDone) metricDone.textContent = orders.filter((o) => normalizeSystemStatus(o.status) === 'Concluído').length;
   }
 
   function renderAttention() {
@@ -335,7 +346,7 @@
         (situation === 'near' && h.key === 'near' && h.days > 0) ||
         (situation === 'done' && h.key === 'done') ||
         h.key === situation;
-      return (!search || text.includes(search)) && (!status || o.status === status) && situationOk;
+      return (!search || text.includes(search)) && (!status || normalizeSystemStatus(o.status) === status) && situationOk;
     });
 
     const priority = { late: 0, near: 1, ontime: 2, unknown: 3, done: 4 };
@@ -363,11 +374,11 @@
           <td>${formatDate(o.estimated_ready_date)}</td>
           <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
-          <td>${escapeHtml(o.status)}</td>
+          <td><span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span></td>
           <td>
             <div class="actions">
               <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
-              ${!['Pronto','Embarcado','Concluído','Cancelado'].includes(o.status) ? `<button class="btn btn-secondary btn-small" data-action="ready" data-id="${o.id}">Marcar pronto</button>` : ''}
+              ${normalizeSystemStatus(o.status) === 'Em produção' ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
               <button class="btn btn-danger btn-small" data-action="delete" data-id="${o.id}">Excluir</button>
             </div>
           </td>
@@ -466,7 +477,7 @@
       order_date: orderDate.value || null,
       estimated_ready_date: estimatedReadyDate.value || null,
       actual_ready_date: actualReadyDate.value || null,
-      status: poStatus.value,
+      status: actualReadyDate.value && poStatus.value === 'Em produção' ? 'Concluído' : poStatus.value,
       notes: notes.value.trim() || null,
       currency: currency.value.trim() || null,
       transportation: transportation.value.trim() || null,
@@ -516,11 +527,11 @@
     await loadOrders();
   }
 
-  async function markReady(id) {
+  async function markCompleted(id) {
     if (!currentUser) return;
     const { error } = await db
       .from('purchase_orders')
-      .update({ actual_ready_date: todayISO(), status: 'Pronto' })
+      .update({ actual_ready_date: todayISO(), status: 'Concluído' })
       .eq('id', id)
       .eq('user_id', currentUser.id);
 
@@ -528,7 +539,7 @@
       showToast(`Erro ao atualizar: ${error.message}`, true);
       return;
     }
-    showToast('PO marcado como pronto.');
+    showToast('PO concluído.');
     await loadOrders();
   }
 
@@ -618,10 +629,8 @@
     if (hidden.includes('cancelada') || hidden.includes('cancelado')) return 'Cancelado';
 
     const status = String(statusValue || '').trim().toLowerCase();
-    if (status === 'docs recebidos e enviado ao cliente') return 'Concluído';
-    if (status === 'pendência documental' || status === 'pendencia documental') return 'Pronto';
-    if (status.includes('produção') || status.includes('producao') || status.includes('cobrança') || status.includes('cobranca')) return 'Em produção';
-    return 'Aguardando produção';
+    if (status === 'docs recebidos e enviado ao cliente' || status.includes('conclu') || status.includes('finaliz')) return 'Concluído';
+    return 'Em produção';
   }
 
   function hashText(text) {
@@ -688,12 +697,12 @@
   function analyzeRecords(records) {
     const health = records.map(getHealth);
     return {
-      active: records.filter((r) => !['Concluído', 'Cancelado'].includes(r.status)).length,
+      active: records.filter((r) => normalizeSystemStatus(r.status) === 'Em produção').length,
       late: health.filter((h) => h.key === 'late').length,
       today: health.filter((h) => h.key === 'near' && h.days === 0).length,
       near: health.filter((h) => h.key === 'near' && h.days > 0).length,
       ontime: health.filter((h) => h.key === 'ontime').length,
-      done: records.filter((r) => r.status === 'Concluído').length,
+      done: records.filter((r) => normalizeSystemStatus(r.status) === 'Concluído').length,
       unknown: health.filter((h) => h.key === 'unknown').length
     };
   }
@@ -1185,7 +1194,7 @@
     const order = orders.find((o) => o.id === id);
 
     if (action === 'edit' && order) openModal(order);
-    if (action === 'ready') await markReady(id);
+    if (action === 'complete') await markCompleted(id);
     if (action === 'delete') await deleteOrder(id);
   });
 
