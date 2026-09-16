@@ -263,7 +263,9 @@
 
   function statusDisplay(status) {
     const normalized = normalizeSystemStatus(status);
-    return normalized === 'Cancelado' ? 'Cancelada' : normalized;
+    if (normalized === 'Cancelado') return 'Cancelada';
+    if (normalized === 'Aguardando recebimento da PO pelo fornecedor') return 'Aguardando resposta do fornecedor';
+    return normalized;
   }
 
   function getHealth(order) {
