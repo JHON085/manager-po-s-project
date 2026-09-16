@@ -238,7 +238,7 @@
     const confirmed = order.supplier_confirmed_at;
 
     if (!started) {
-      if (status === 'Aguardando recebimento da PO pelo fornecedor') {
+      if (status === 'Aguardando resposta do fornecedor') {
         return '<span class="supplier-timer timer-not-started">Contagem não iniciada</span>';
       }
       return '<span class="supplier-timer timer-empty">—</span>';
@@ -255,7 +255,15 @@
 
   function normalizeSystemStatus(status) {
     const raw = String(status || '').trim();
-    if (raw === 'Aguardando recebimento da PO pelo fornecedor') return raw;
+
+    // Compatibilidade com registros antigos, antes da troca de nome do status.
+    if (
+      raw === 'Aguardando resposta do fornecedor' ||
+      raw === 'Aguardando recebimento da PO pelo fornecedor'
+    ) {
+      return 'Aguardando resposta do fornecedor';
+    }
+
     if (raw === 'Cancelado' || raw === 'Cancelada') return 'Cancelado';
     if (['Concluído', 'Pronto', 'Embarcado'].includes(raw)) return 'Concluído';
     return 'Em produção';
@@ -263,9 +271,7 @@
 
   function statusDisplay(status) {
     const normalized = normalizeSystemStatus(status);
-    if (normalized === 'Cancelado') return 'Cancelada';
-    if (normalized === 'Aguardando recebimento da PO pelo fornecedor') return 'Aguardando resposta do fornecedor';
-    return normalized;
+    return normalized === 'Cancelado' ? 'Cancelada' : normalized;
   }
 
   function getHealth(order) {
@@ -294,7 +300,7 @@
     hideMessage(formError);
     poId.value = '';
     orderDate.value = todayISO();
-    poStatus.value = 'Aguardando recebimento da PO pelo fornecedor';
+    poStatus.value = 'Aguardando resposta do fornecedor';
     modalTitle.textContent = 'Novo PO';
 
     if (order) {
@@ -440,7 +446,7 @@
   }
 
   function renderMetrics() {
-    const active = orders.filter((o) => ['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)));
+    const active = orders.filter((o) => ['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)));
     const health = active.map(getHealth);
     metricActive.textContent = active.length;
     metricOnTime.textContent = health.filter((h) => h.key === 'ontime').length;
@@ -515,14 +521,14 @@
           <td>${formatDate(o.estimated_ready_date)}</td>
           <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
-          <td><span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : normalizeSystemStatus(o.status) === 'Aguardando recebimento da PO pelo fornecedor' ? 'status-waiting' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span></td>
+          <td><span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' ? 'status-waiting' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span></td>
           <td>${supplierWaitHtml(o)}</td>
           <td>${canEdit() ? `
             <div class="actions">
               <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
-              ${normalizeSystemStatus(o.status) === 'Aguardando recebimento da PO pelo fornecedor' && !o.supplier_sent_at ? `<button class="btn btn-primary btn-small" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
-              ${normalizeSystemStatus(o.status) === 'Aguardando recebimento da PO pelo fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button class="btn btn-primary btn-small" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
-              ${['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
+              ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button class="btn btn-primary btn-small" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
+              ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button class="btn btn-primary btn-small" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
+              ${['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
               <button class="btn btn-danger btn-small" data-action="delete" data-id="${o.id}">Excluir</button>
             </div>` : '<span class="readonly-text">Somente leitura</span>'}
           </td>
@@ -611,7 +617,7 @@
       order_date: orderDate.value || null,
       estimated_ready_date: estimatedReadyDate.value || null,
       actual_ready_date: actualReadyDate.value || null,
-      status: actualReadyDate.value && ['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(poStatus.value) ? 'Concluído' : poStatus.value,
+      status: actualReadyDate.value && ['Aguardando resposta do fornecedor', 'Em produção'].includes(poStatus.value) ? 'Concluído' : poStatus.value,
       notes: notes.value.trim() || null,
       currency: currency.value.trim() || null,
       transportation: transportation.value.trim() || null,
@@ -686,7 +692,7 @@
     const { error } = await db
       .from('purchase_orders')
       .update({
-        status: 'Aguardando recebimento da PO pelo fornecedor',
+        status: 'Aguardando resposta do fornecedor',
         supplier_sent_at: now,
         supplier_confirmed_at: null
       })
@@ -850,7 +856,10 @@
     if (hidden.includes('cancelada') || hidden.includes('cancelado')) return 'Cancelado';
 
     const status = String(statusValue || '').trim().toLowerCase();
-    if (status.includes('aguardando recebimento') && status.includes('fornecedor')) return 'Aguardando recebimento da PO pelo fornecedor';
+    if (
+      (status.includes('aguardando recebimento') && status.includes('fornecedor')) ||
+      (status.includes('aguardando resposta') && status.includes('fornecedor'))
+    ) return 'Aguardando resposta do fornecedor';
     if (status === 'docs recebidos e enviado ao cliente' || status.includes('conclu') || status.includes('finaliz')) return 'Concluído';
     return 'Em produção';
   }
@@ -918,7 +927,7 @@
   function analyzeRecords(records) {
     const health = records.map(getHealth);
     return {
-      active: records.filter((r) => ['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(normalizeSystemStatus(r.status))).length,
+      active: records.filter((r) => ['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(r.status))).length,
       late: health.filter((h) => h.key === 'late').length,
       today: health.filter((h) => h.key === 'near' && h.days === 0).length,
       near: health.filter((h) => h.key === 'near' && h.days > 0).length,
