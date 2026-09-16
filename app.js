@@ -110,6 +110,7 @@
   let accessMode = 'signed_out'; // signed_out | editor | viewer
   let orders = [];
   let refreshTimer = null;
+  let elapsedRenderTimer = null;
   let realtimeChannel = null;
   let loadingOrders = false;
   let quotes = [];
@@ -201,6 +202,55 @@
     if (!value) return '—';
     const [y, m, d] = value.split('-');
     return `${d}/${m}/${y}`;
+  }
+
+
+  function formatDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  function formatElapsed(startValue, endValue = null) {
+    if (!startValue) return null;
+    const start = new Date(startValue);
+    const end = endValue ? new Date(endValue) : new Date();
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    let totalMinutes = Math.max(0, Math.floor((end - start) / 60000));
+    const days = Math.floor(totalMinutes / 1440);
+    totalMinutes %= 1440;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    parts.push(`${minutes}min`);
+    return parts.join(' ');
+  }
+
+  function supplierWaitHtml(order) {
+    const status = normalizeSystemStatus(order.status);
+    const started = order.supplier_sent_at;
+    const confirmed = order.supplier_confirmed_at;
+
+    if (!started) {
+      if (status === 'Aguardando recebimento da PO pelo fornecedor') {
+        return '<span class="supplier-timer timer-not-started">Contagem não iniciada</span>';
+      }
+      return '<span class="supplier-timer timer-empty">—</span>';
+    }
+
+    if (confirmed) {
+      const elapsed = formatElapsed(started, confirmed) || '—';
+      return `<span class="supplier-timer timer-done">Confirmou em ${escapeHtml(elapsed)}</span><small class="supplier-timer-meta">${escapeHtml(formatDateTime(confirmed))}</small>`;
+    }
+
+    const elapsed = formatElapsed(started) || '—';
+    return `<span class="supplier-timer timer-running">Aguardando há ${escapeHtml(elapsed)}</span><small class="supplier-timer-meta">Enviada ${escapeHtml(formatDateTime(started))}</small>`;
   }
 
   function normalizeSystemStatus(status) {
@@ -325,6 +375,10 @@
       clearInterval(refreshTimer);
       refreshTimer = null;
     }
+    if (elapsedRenderTimer) {
+      clearInterval(elapsedRenderTimer);
+      elapsedRenderTimer = null;
+    }
     stopRealtime();
 
     if (canRead()) {
@@ -340,6 +394,11 @@
       refreshTimer = setInterval(() => {
         if (canRead() && !document.hidden) { loadOrders(true); loadQuotes(true); }
       }, 60000);
+
+      // Atualiza apenas os contadores de espera sem precisar consultar o banco.
+      elapsedRenderTimer = setInterval(() => {
+        if (canRead() && !document.hidden && activeMode === 'pos') renderTable();
+      }, 30000);
     } else {
       if (accessMode === 'signed_out') sessionStorage.removeItem('po_access_mode');
       appPage.classList.add('hidden');
@@ -440,7 +499,7 @@
     });
 
     if (!filtered.length) {
-      ordersBody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum PO encontrado.</td></tr>';
+      ordersBody.innerHTML = '<tr><td colspan="9" class="empty">Nenhum PO encontrado.</td></tr>';
       return;
     }
 
@@ -455,9 +514,12 @@
           <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
           <td><span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : normalizeSystemStatus(o.status) === 'Aguardando recebimento da PO pelo fornecedor' ? 'status-waiting' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span></td>
+          <td>${supplierWaitHtml(o)}</td>
           <td>${canEdit() ? `
             <div class="actions">
               <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
+              ${normalizeSystemStatus(o.status) === 'Aguardando recebimento da PO pelo fornecedor' && !o.supplier_sent_at ? `<button class="btn btn-primary btn-small" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
+              ${normalizeSystemStatus(o.status) === 'Aguardando recebimento da PO pelo fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button class="btn btn-primary btn-small" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
               ${['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
               <button class="btn btn-danger btn-small" data-action="delete" data-id="${o.id}">Excluir</button>
             </div>` : '<span class="readonly-text">Somente leitura</span>'}
@@ -609,6 +671,58 @@
     }
     showToast('PO concluído.');
     await loadOrders();
+  }
+
+
+  async function startSupplierWait(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    if (order.supplier_sent_at && !confirm(`A PO ${order.po_number} já possui uma data de envio. Reiniciar a contagem a partir de agora?`)) return;
+
+    const now = new Date().toISOString();
+    const { error } = await db
+      .from('purchase_orders')
+      .update({
+        status: 'Aguardando recebimento da PO pelo fornecedor',
+        supplier_sent_at: now,
+        supplier_confirmed_at: null
+      })
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao iniciar contagem: ${error.message}`, true, 6000);
+      return;
+    }
+    showToast('PO enviada ao fornecedor. Contagem iniciada.');
+    await loadOrders(true);
+  }
+
+  async function confirmSupplierReceipt(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    if (!order.supplier_sent_at) {
+      showToast('Inicie a contagem de envio antes de confirmar o recebimento.', true, 5000);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const elapsed = formatElapsed(order.supplier_sent_at, now);
+    const { error } = await db
+      .from('purchase_orders')
+      .update({
+        supplier_confirmed_at: now,
+        status: 'Em produção'
+      })
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao registrar confirmação: ${error.message}`, true, 6000);
+      return;
+    }
+    showToast(`Fornecedor confirmou. Tempo de resposta: ${elapsed || 'registrado'}.`);
+    await loadOrders(true);
   }
 
   async function deleteOrder(id) {
@@ -1316,6 +1430,8 @@
     const order = orders.find((o) => o.id === id);
 
     if (action === 'edit' && order) openModal(order);
+    if (action === 'supplier-start') await startSupplierWait(id);
+    if (action === 'supplier-confirm') await confirmSupplierReceipt(id);
     if (action === 'complete') await markCompleted(id);
     if (action === 'delete') await deleteOrder(id);
   });

@@ -326,3 +326,12 @@ td { color:#303033; }
 .po-number-readonly { font-weight:600; color:#303033; }
 .badge.status-waiting { color:#8a5b00; background:#fff4d6; }
 @media (max-width:650px) { .role-pill { display:none; } }
+
+
+/* ===== Confirmação do fornecedor v5.1 ===== */
+.supplier-timer { display:block; font-size:11px; font-weight:600; white-space:nowrap; }
+.supplier-timer-meta { display:block; margin-top:3px; color:var(--muted); font-size:10px; white-space:nowrap; }
+.timer-running { color:#8a5b00; }
+.timer-done { color:#16794a; }
+.timer-not-started { color:#86868b; font-weight:500; }
+.timer-empty { color:#b0b0b5; font-weight:500; }
