@@ -316,3 +316,13 @@ td { color:#303033; }
   .zpmc-link-logo-auth { height: 28px; max-width: 92px; }
   .zpmc-link-logo-header { height: 20px; max-width: 70px; }
 }
+
+
+/* ===== Shared access v5 ===== */
+.auth-note { margin:12px 0 0; color:var(--muted); font-size:11px; line-height:1.45; }
+.role-pill { display:inline-flex; align-items:center; height:24px; padding:0 8px; border-radius:999px; background:#e8f2ff; color:#0062c4; font-size:11px; font-weight:600; }
+.role-pill.viewer { background:#f2f2f4; color:#6e6e73; }
+.readonly-text { color:#8a8a8e; font-size:11px; white-space:nowrap; }
+.po-number-readonly { font-weight:600; color:#303033; }
+.badge.status-waiting { color:#8a5b00; background:#fff4d6; }
+@media (max-width:650px) { .role-pill { display:none; } }

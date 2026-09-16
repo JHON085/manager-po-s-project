@@ -18,8 +18,13 @@
       </div>
       <form id="authForm" class="auth-form" novalidate>
         <div class="field">
-          <label for="authEmail">E-mail</label>
-          <input id="authEmail" type="email" autocomplete="email" required />
+          <label for="authEmail">Usuário</label>
+          <select id="authEmail" autocomplete="username" required>
+            <option value="">Selecione seu acesso</option>
+            <option value="joao@zpmcbrazil.com">joao@zpmcbrazil.com</option>
+            <option value="moreira@zpmcbrazil.com">moreira@zpmcbrazil.com</option>
+            <option value="leandro@zpmcbrazil.com">leandro@zpmcbrazil.com</option>
+          </select>
         </div>
         <div class="field">
           <label for="authPassword">Senha</label>
@@ -27,8 +32,9 @@
         </div>
         <div class="auth-actions">
           <button id="loginBtn" type="submit" class="btn btn-primary">Entrar</button>
-          <button id="signupBtn" type="button" class="btn btn-secondary">Criar conta</button>
+          <button id="viewerBtn" type="button" class="btn btn-secondary">Modo espectador</button>
         </div>
+        <p class="auth-note">Acesso de edição restrito à equipe autorizada. O modo espectador é somente leitura.</p>
       </form>
       <div id="authMessage" class="message hidden"></div>
     </div>
@@ -42,6 +48,7 @@
       </div>
       <div class="right">
         <span id="syncPill" class="sync-pill">Conectando...</span>
+        <span id="rolePill" class="role-pill hidden"></span>
         <span id="userEmail" class="user-email"></span>
         <button id="logoutBtn" type="button" class="btn btn-secondary btn-small">Sair</button>
       </div>
@@ -57,12 +64,12 @@
       <div class="page-head">
         <div>
           <h1>Dashboard</h1>
-          <p>Sincronize a FOLLOW UP e acompanhe atrasos, próximos, no prazo e concluídos.</p>
+          <p>Acompanhe a FOLLOW UP em tempo real: recebimento, produção, prazos e conclusão.</p>
         </div>
         <div class="page-actions">
-          <button id="deleteAllPosBtn" type="button" class="btn btn-danger">Excluir todas as POs</button>
-          <button id="importExcelBtn" type="button" class="btn btn-secondary">Sincronizar Excel</button>
-          <button id="newPoBtn" type="button" class="btn btn-primary">+ Novo PO</button>
+          <button id="deleteAllPosBtn" type="button" class="btn btn-danger" data-editor-only>Excluir todas as POs</button>
+          <button id="importExcelBtn" type="button" class="btn btn-secondary" data-editor-only>Sincronizar Excel</button>
+          <button id="newPoBtn" type="button" class="btn btn-primary" data-editor-only>+ Novo PO</button>
         </div>
       </div>
 
@@ -86,6 +93,7 @@
             <input id="searchInput" type="search" placeholder="Buscar PO, fornecedor, cliente..." />
             <select id="statusFilter">
               <option value="">Todos os status</option>
+              <option value="Aguardando recebimento da PO pelo fornecedor">Aguardando recebimento da PO pelo fornecedor</option>
               <option value="Em produção">Em produção</option>
               <option value="Concluído">Concluído</option>
               <option value="Cancelado">Cancelada</option>
@@ -119,7 +127,7 @@
           </div>
           <div class="page-actions">
             <button id="refreshQuotesBtn" type="button" class="btn btn-secondary">Atualizar</button>
-            <button id="newQuoteBtn" type="button" class="btn btn-primary">+ Nova cotação</button>
+            <button id="newQuoteBtn" type="button" class="btn btn-primary" data-editor-only>+ Nova cotação</button>
           </div>
         </div>
 
@@ -180,9 +188,9 @@
             <div class="field"><label for="incoterm">Incoterm</label><select id="incoterm"><option value="">Selecione</option><option>EXW</option><option>FCA</option><option>FOB</option><option>FOB/FCA</option><option>CFR</option><option>CIF</option><option>CIP</option><option>DAP</option><option>DDP</option></select></div>
             <div class="field"><label for="responsible">Responsável</label><input id="responsible" /></div>
             <div class="field"><label for="orderDate">Data do pedido</label><input id="orderDate" type="date" /></div>
-            <div class="field"><label for="estimatedReadyDate">Estimativa de prontidão *</label><input id="estimatedReadyDate" type="date" required /></div>
+            <div class="field"><label for="estimatedReadyDate">Estimativa de prontidão</label><input id="estimatedReadyDate" type="date" /></div>
             <div class="field"><label for="actualReadyDate">Prontidão real</label><input id="actualReadyDate" type="date" /></div>
-            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Em produção">Em produção</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
+            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Aguardando recebimento da PO pelo fornecedor">Aguardando recebimento da PO pelo fornecedor</option><option value="Em produção">Em produção</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
             <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
 
             <details class="extra-section span-3">

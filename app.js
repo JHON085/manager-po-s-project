@@ -11,10 +11,11 @@
   const authPassword = $('authPassword');
   const authMessage = $('authMessage');
   const loginBtn = $('loginBtn');
-  const signupBtn = $('signupBtn');
+  const viewerBtn = $('viewerBtn');
   const logoutBtn = $('logoutBtn');
   const userEmail = $('userEmail');
   const syncPill = $('syncPill');
+  const rolePill = $('rolePill');
 
   const newPoBtn = $('newPoBtn');
   const importExcelBtn = $('importExcelBtn');
@@ -98,10 +99,18 @@
   const quoteStatusFilter = $('quoteStatusFilter');
   const quoteRows = $('quoteRows');
 
+  const EDITOR_EMAILS = new Set([
+    'joao@zpmcbrazil.com',
+    'moreira@zpmcbrazil.com',
+    'leandro@zpmcbrazil.com'
+  ]);
+
   let db = null;
   let currentUser = null;
+  let accessMode = 'signed_out'; // signed_out | editor | viewer
   let orders = [];
   let refreshTimer = null;
+  let realtimeChannel = null;
   let loadingOrders = false;
   let quotes = [];
   let loadingQuotes = false;
@@ -126,6 +135,40 @@
     toast.textContent = text;
     toast.className = error ? 'toast error' : 'toast';
     setTimeout(() => { toast.className = 'toast hidden'; }, duration);
+  }
+
+  function normalizedEmail(email) {
+    return String(email || '').trim().toLowerCase();
+  }
+
+  function isEditorEmail(email) {
+    return EDITOR_EMAILS.has(normalizedEmail(email));
+  }
+
+  function canRead() {
+    return accessMode === 'editor' || accessMode === 'viewer';
+  }
+
+  function canEdit() {
+    return accessMode === 'editor' && currentUser && isEditorEmail(currentUser.email);
+  }
+
+  function requireEditor(message = 'Modo espectador: esta ação é somente para editores.') {
+    if (canEdit()) return true;
+    showToast(message, true, 5000);
+    return false;
+  }
+
+  function applyPermissionUI() {
+    const editor = canEdit();
+    document.querySelectorAll('[data-editor-only]').forEach((el) => {
+      el.classList.toggle('hidden', !editor);
+    });
+    if (rolePill) {
+      rolePill.textContent = editor ? 'Editor' : (accessMode === 'viewer' ? 'Espectador' : '');
+      rolePill.classList.toggle('hidden', !canRead());
+      rolePill.classList.toggle('viewer', accessMode === 'viewer');
+    }
   }
 
   function escapeHtml(value) {
@@ -161,8 +204,10 @@
   }
 
   function normalizeSystemStatus(status) {
-    if (status === 'Cancelado' || status === 'Cancelada') return 'Cancelado';
-    if (['Concluído', 'Pronto', 'Embarcado'].includes(status)) return 'Concluído';
+    const raw = String(status || '').trim();
+    if (raw === 'Aguardando recebimento da PO pelo fornecedor') return raw;
+    if (raw === 'Cancelado' || raw === 'Cancelada') return 'Cancelado';
+    if (['Concluído', 'Pronto', 'Embarcado'].includes(raw)) return 'Concluído';
     return 'Em produção';
   }
 
@@ -192,11 +237,12 @@
   }
 
   function openModal(order = null) {
+    if (!requireEditor()) return;
     poForm.reset();
     hideMessage(formError);
     poId.value = '';
     orderDate.value = todayISO();
-    poStatus.value = 'Em produção';
+    poStatus.value = 'Aguardando recebimento da PO pelo fornecedor';
     modalTitle.textContent = 'Novo PO';
 
     if (order) {
@@ -248,25 +294,58 @@
     if (activeMode === 'quotes') loadQuotes(true);
   }
 
-  function setAuthView(user) {
+  async function stopRealtime() {
+    if (realtimeChannel && db) {
+      try { await db.removeChannel(realtimeChannel); } catch (_) {}
+      realtimeChannel = null;
+    }
+  }
+
+  function startRealtime() {
+    if (!db || !canRead()) return;
+    if (realtimeChannel) {
+      try { db.removeChannel(realtimeChannel); } catch (_) {}
+      realtimeChannel = null;
+    }
+
+    realtimeChannel = db
+      .channel('po-control-shared-live-v5')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, () => loadOrders(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'china_quotes' }, () => loadQuotes(true))
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setSync('Ao vivo');
+      });
+  }
+
+  function setAccessView(user = null, mode = 'signed_out') {
     currentUser = user || null;
+    accessMode = mode;
+
     if (refreshTimer) {
       clearInterval(refreshTimer);
       refreshTimer = null;
     }
-    if (currentUser) {
+    stopRealtime();
+
+    if (canRead()) {
       authPage.classList.add('hidden');
       appPage.classList.remove('hidden');
-      userEmail.textContent = currentUser.email || '';
+      userEmail.textContent = canEdit() ? (currentUser.email || '') : 'Modo espectador';
+      applyPermissionUI();
       loadOrders();
       loadQuotes(true);
-      // Atualização automática: mantém o dashboard próximo do tempo real sem precisar F5.
+      startRealtime();
+
+      // Fallback caso o Realtime esteja temporariamente indisponível.
       refreshTimer = setInterval(() => {
-        if (currentUser && !document.hidden) { loadOrders(true); loadQuotes(true); }
-      }, 30000);
+        if (canRead() && !document.hidden) { loadOrders(true); loadQuotes(true); }
+      }, 60000);
     } else {
+      if (accessMode === 'signed_out') sessionStorage.removeItem('po_access_mode');
       appPage.classList.add('hidden');
       authPage.classList.remove('hidden');
+      userEmail.textContent = '';
+      applyPermissionUI();
       orders = [];
       quotes = [];
       render();
@@ -275,7 +354,7 @@
   }
 
   async function loadOrders(quiet = false) {
-    if (!currentUser || loadingOrders) return;
+    if (!canRead() || loadingOrders) return;
     loadingOrders = true;
     if (!quiet) setSync('Sincronizando...');
     try {
@@ -300,7 +379,7 @@
   }
 
   function renderMetrics() {
-    const active = orders.filter((o) => normalizeSystemStatus(o.status) === 'Em produção');
+    const active = orders.filter((o) => ['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)));
     const health = active.map(getHealth);
     metricActive.textContent = active.length;
     metricOnTime.textContent = health.filter((h) => h.key === 'ontime').length;
@@ -369,19 +448,19 @@
       const health = getHealth(o);
       return `
         <tr class="row-${health.key}">
-          <td><button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button></td>
+          <td>${canEdit() ? `<button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button>` : `<span class="po-number-readonly">${escapeHtml(o.po_number)}</span>`}</td>
           <td>${escapeHtml(o.supplier)}</td>
           <td>${escapeHtml(o.client || '—')}</td>
           <td>${formatDate(o.estimated_ready_date)}</td>
           <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
-          <td><span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span></td>
-          <td>
+          <td><span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : normalizeSystemStatus(o.status) === 'Aguardando recebimento da PO pelo fornecedor' ? 'status-waiting' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span></td>
+          <td>${canEdit() ? `
             <div class="actions">
               <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
-              ${normalizeSystemStatus(o.status) === 'Em produção' ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
+              ${['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
               <button class="btn btn-danger btn-small" data-action="delete" data-id="${o.id}">Excluir</button>
-            </div>
+            </div>` : '<span class="readonly-text">Somente leitura</span>'}
           </td>
         </tr>
       `;
@@ -396,51 +475,42 @@
 
   async function handleLogin(event) {
     event.preventDefault();
+    sessionStorage.removeItem('po_access_mode');
     hideMessage(authMessage);
-    if (!authEmail.value || !authPassword.value) {
+    const email = normalizedEmail(authEmail.value);
+    if (!email || !authPassword.value) {
       showMessage(authMessage, 'Preencha e-mail e senha.');
+      return;
+    }
+    if (!isEditorEmail(email)) {
+      showMessage(authMessage, 'Este e-mail não possui acesso de edição. Use o Modo espectador.');
       return;
     }
 
     loginBtn.disabled = true;
     loginBtn.textContent = 'Entrando...';
-    const { error } = await db.auth.signInWithPassword({
-      email: authEmail.value.trim(),
+    const { data, error } = await db.auth.signInWithPassword({
+      email,
       password: authPassword.value
     });
     loginBtn.disabled = false;
     loginBtn.textContent = 'Entrar';
 
-    if (error) showMessage(authMessage, error.message);
-  }
-
-  async function handleSignup() {
-    hideMessage(authMessage);
-    if (!authEmail.value || !authPassword.value) {
-      showMessage(authMessage, 'Preencha e-mail e senha.');
-      return;
-    }
-    if (authPassword.value.length < 6) {
-      showMessage(authMessage, 'A senha precisa ter pelo menos 6 caracteres.');
-      return;
-    }
-
-    signupBtn.disabled = true;
-    signupBtn.textContent = 'Criando...';
-    const { data, error } = await db.auth.signUp({
-      email: authEmail.value.trim(),
-      password: authPassword.value
-    });
-    signupBtn.disabled = false;
-    signupBtn.textContent = 'Criar conta';
-
     if (error) {
       showMessage(authMessage, error.message);
       return;
     }
+    if (data?.user && !isEditorEmail(data.user.email)) {
+      await db.auth.signOut();
+      showMessage(authMessage, 'Usuário sem permissão de edição.');
+    }
+  }
 
-    if (data.session) showMessage(authMessage, 'Conta criada e login realizado.', 'success');
-    else showMessage(authMessage, 'Conta criada. Confirme o e-mail e depois faça login.', 'success');
+  async function enterViewerMode() {
+    hideMessage(authMessage);
+    sessionStorage.setItem('po_access_mode', 'viewer');
+    try { await db.auth.signOut(); } catch (_) {}
+    setAccessView(null, 'viewer');
   }
 
   function optionalNumber(input) {
@@ -454,13 +524,13 @@
     hideMessage(formError);
 
     const isEditing = Boolean(poId.value);
-    if (!poNumber.value.trim() || !supplier.value.trim() || (!isEditing && !estimatedReadyDate.value)) {
-      showMessage(formError, 'Preencha Número do PO, Fornecedor e Estimativa de prontidão.');
+    if (!poNumber.value.trim() || !supplier.value.trim()) {
+      showMessage(formError, 'Preencha Número do PO e Fornecedor.');
       return;
     }
 
-    if (!currentUser) {
-      showMessage(formError, 'Sua sessão expirou. Faça login novamente.');
+    if (!requireEditor()) {
+      showMessage(formError, 'Modo espectador não pode salvar alterações.');
       return;
     }
 
@@ -468,7 +538,6 @@
     savePoBtn.textContent = 'Salvando...';
 
     const payload = {
-      user_id: currentUser.id,
       po_number: poNumber.value.trim(),
       supplier: supplier.value.trim(),
       client: client.value.trim() || null,
@@ -478,7 +547,7 @@
       order_date: orderDate.value || null,
       estimated_ready_date: estimatedReadyDate.value || null,
       actual_ready_date: actualReadyDate.value || null,
-      status: actualReadyDate.value && poStatus.value === 'Em produção' ? 'Concluído' : poStatus.value,
+      status: actualReadyDate.value && ['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(poStatus.value) ? 'Concluído' : poStatus.value,
       notes: notes.value.trim() || null,
       currency: currency.value.trim() || null,
       transportation: transportation.value.trim() || null,
@@ -499,13 +568,12 @@
           .from('purchase_orders')
           .update(payload)
           .eq('id', poId.value)
-          .eq('user_id', currentUser.id)
           .select()
           .single();
       } else {
         result = await db
           .from('purchase_orders')
-          .insert(payload)
+          .insert({ ...payload, user_id: currentUser.id })
           .select()
           .single();
       }
@@ -529,12 +597,11 @@
   }
 
   async function markCompleted(id) {
-    if (!currentUser) return;
+    if (!requireEditor()) return;
     const { error } = await db
       .from('purchase_orders')
       .update({ actual_ready_date: todayISO(), status: 'Concluído' })
-      .eq('id', id)
-      .eq('user_id', currentUser.id);
+      .eq('id', id);
 
     if (error) {
       showToast(`Erro ao atualizar: ${error.message}`, true);
@@ -546,14 +613,13 @@
 
   async function deleteOrder(id) {
     const order = orders.find((o) => o.id === id);
-    if (!order || !currentUser) return;
+    if (!order || !requireEditor()) return;
     if (!confirm(`Excluir o PO ${order.po_number}?`)) return;
 
     const { error } = await db
       .from('purchase_orders')
       .delete()
-      .eq('id', id)
-      .eq('user_id', currentUser.id);
+      .eq('id', id);
 
     if (error) {
       showToast(`Erro ao excluir: ${error.message}`, true);
@@ -564,7 +630,7 @@
   }
 
   async function deleteAllOrders() {
-    if (!currentUser) return;
+    if (!requireEditor()) return;
 
     const total = orders.length;
     if (!total) {
@@ -573,7 +639,7 @@
     }
 
     const confirmation = prompt(
-      `ATENÇÃO: isso excluirá ${total} PO${total === 1 ? '' : 's'} da sua conta.\n\nAs Cotações China não serão apagadas.\n\nDigite EXCLUIR para confirmar:`
+      `ATENÇÃO: isso excluirá ${total} PO${total === 1 ? '' : 's'} da base compartilhada.\n\nAs Cotações China não serão apagadas.\n\nDigite EXCLUIR para confirmar:`
     );
 
     if (confirmation !== 'EXCLUIR') {
@@ -587,7 +653,7 @@
     const { error } = await db
       .from('purchase_orders')
       .delete()
-      .eq('user_id', currentUser.id);
+      .not('id', 'is', null);
 
     deleteAllPosBtn.disabled = false;
     deleteAllPosBtn.textContent = 'Excluir todas as POs';
@@ -668,6 +734,7 @@
     if (hidden.includes('cancelada') || hidden.includes('cancelado')) return 'Cancelado';
 
     const status = String(statusValue || '').trim().toLowerCase();
+    if (status.includes('aguardando recebimento') && status.includes('fornecedor')) return 'Aguardando recebimento da PO pelo fornecedor';
     if (status === 'docs recebidos e enviado ao cliente' || status.includes('conclu') || status.includes('finaliz')) return 'Concluído';
     return 'Em produção';
   }
@@ -700,7 +767,6 @@
     const fingerprint = `followup:${sourceNo ?? 'x'}:${purchaseOrder}`;
 
     return {
-      user_id: currentUser.id,
       po_number: purchaseOrder,
       supplier: supplierValue,
       client: cleanText(getCell(row, 'Customer')),
@@ -736,7 +802,7 @@
   function analyzeRecords(records) {
     const health = records.map(getHealth);
     return {
-      active: records.filter((r) => normalizeSystemStatus(r.status) === 'Em produção').length,
+      active: records.filter((r) => ['Aguardando recebimento da PO pelo fornecedor', 'Em produção'].includes(normalizeSystemStatus(r.status))).length,
       late: health.filter((h) => h.key === 'late').length,
       today: health.filter((h) => h.key === 'near' && h.days === 0).length,
       near: health.filter((h) => h.key === 'near' && h.days > 0).length,
@@ -747,10 +813,7 @@
   }
 
   async function handleExcelImport(file) {
-    if (!currentUser) {
-      showToast('Faça login antes de importar.', true);
-      return;
-    }
+    if (!requireEditor('Somente editores podem sincronizar a FOLLOW UP.')) return;
     if (!window.XLSX) {
       showToast('A biblioteca de Excel não foi carregada. Atualize a página.', true, 6000);
       return;
@@ -794,8 +857,7 @@
       setSync('Comparando com o Supabase...');
       const { data: existingData, error: existingError } = await db
         .from('purchase_orders')
-        .select('id,source_no,po_number,import_fingerprint,import_source')
-        .eq('user_id', currentUser.id)
+        .select('id,user_id,source_no,po_number,import_fingerprint,import_source')
         .not('import_source', 'is', null);
       if (existingError) throw new Error(existingError.message);
 
@@ -821,6 +883,7 @@
           return {
             ...record,
             id: existing.id,
+            user_id: existing.user_id || currentUser.id,
             // Mantém o fingerprint antigo se essa linha veio de uma versão anterior,
             // evitando conflito na primeira sincronização desta nova versão.
             import_fingerprint: existing.import_fingerprint || record.import_fingerprint
@@ -859,7 +922,6 @@
         const { error } = await db
           .from('purchase_orders')
           .delete()
-          .eq('user_id', currentUser.id)
           .in('id', ids);
         if (error) throw new Error(`Dados sincronizados, mas houve erro ao limpar linhas antigas: ${error.message}`);
       }
@@ -930,13 +992,12 @@
   }
 
   async function loadQuotes(quiet = false) {
-    if (!currentUser || loadingQuotes) return;
+    if (!canRead() || loadingQuotes) return;
     loadingQuotes = true;
     try {
       const { data, error } = await db
         .from('china_quotes')
         .select('*')
-        .eq('user_id', currentUser.id)
         .order('sent_at', { ascending: false });
 
       if (error) {
@@ -1023,7 +1084,7 @@
       const t = quoteTiming(q);
       const rowClass = t.key === 'late' ? 'quote-row-late' : (t.key === 'attention' ? 'quote-row-attention' : '');
       return `<tr class="${rowClass}">
-        <td><button class="po-link" data-quote-action="edit" data-id="${q.id}">${escapeHtml(q.reference)}</button></td>
+        <td>${canEdit() ? `<button class="po-link" data-quote-action="edit" data-id="${q.id}">${escapeHtml(q.reference)}</button>` : `<span class="po-number-readonly">${escapeHtml(q.reference)}</span>`}</td>
         <td>${escapeHtml(q.supplier)}</td>
         <td>${escapeHtml(q.client || '—')}</td>
         <td>${formatDateTime(q.sent_at)}<span class="quote-deadline">Prazo: ${formatDateTime(new Date(t.deadline).toISOString())}</span></td>
@@ -1032,11 +1093,11 @@
         <td>${hoursLabel(t.elapsed)}</td>
         <td><span class="badge ${t.cls}">${t.label}</span></td>
         <td>${escapeHtml(q.owner || '—')}</td>
-        <td><div class="actions">
+        <td>${canEdit() ? `<div class="actions">
           ${!q.response_at ? `<button class="btn btn-primary btn-small" data-quote-action="answered" data-id="${q.id}">Respondida</button>` : ''}
           <button class="btn btn-secondary btn-small" data-quote-action="edit" data-id="${q.id}">Editar</button>
           <button class="btn btn-danger btn-small" data-quote-action="delete" data-id="${q.id}">Excluir</button>
-        </div></td>
+        </div>` : '<span class="readonly-text">Somente leitura</span>'}</td>
       </tr>`;
     }).join('');
   }
@@ -1049,6 +1110,7 @@
   }
 
   function openQuoteModal(q = null) {
+    if (!requireEditor()) return;
     if (!quotesTableAvailable) {
       showToast('Primeiro rode migration_china_quotes.sql no Supabase.', true, 6000);
       return;
@@ -1087,7 +1149,7 @@
   async function handleSaveQuote(event) {
     event.preventDefault();
     hideMessage(quoteFormError);
-    if (!currentUser) return;
+    if (!requireEditor()) return;
     if (!quoteReference.value.trim() || !quoteSupplier.value.trim() || !quoteSentAt.value || !quoteTargetHours.value) {
       showMessage(quoteFormError, 'Preencha Referência, Fornecedor, Enviada em e Meta de resposta.');
       return;
@@ -1102,7 +1164,6 @@
     saveQuoteBtn.textContent = 'Salvando...';
     const isEditing = Boolean(quoteId.value);
     const payload = {
-      user_id: currentUser.id,
       reference: quoteReference.value.trim(),
       supplier: quoteSupplier.value.trim(),
       client: quoteClient.value.trim() || null,
@@ -1116,9 +1177,9 @@
     try {
       let result;
       if (isEditing) {
-        result = await db.from('china_quotes').update(payload).eq('id', quoteId.value).eq('user_id', currentUser.id);
+        result = await db.from('china_quotes').update(payload).eq('id', quoteId.value);
       } else {
-        result = await db.from('china_quotes').insert(payload);
+        result = await db.from('china_quotes').insert({ ...payload, user_id: currentUser.id });
       }
       if (result.error) throw result.error;
       closeQuoteModal();
@@ -1133,10 +1194,10 @@
   }
 
   async function markQuoteAnswered(id) {
-    if (!currentUser) return;
+    if (!requireEditor()) return;
     const { error } = await db.from('china_quotes')
       .update({ response_at:new Date().toISOString(), updated_at:new Date().toISOString() })
-      .eq('id', id).eq('user_id', currentUser.id);
+      .eq('id', id);
     if (error) { showToast(`Erro ao registrar resposta: ${error.message}`, true); return; }
     showToast('Resposta registrada.');
     await loadQuotes();
@@ -1144,9 +1205,9 @@
 
   async function deleteQuote(id) {
     const q = quotes.find((x) => x.id === id);
-    if (!q || !currentUser) return;
+    if (!q || !requireEditor()) return;
     if (!confirm(`Excluir a cotação ${q.reference}?`)) return;
-    const { error } = await db.from('china_quotes').delete().eq('id', id).eq('user_id', currentUser.id);
+    const { error } = await db.from('china_quotes').delete().eq('id', id);
     if (error) { showToast(`Erro ao excluir: ${error.message}`, true); return; }
     showToast('Cotação excluída.');
     await loadQuotes();
@@ -1156,7 +1217,7 @@
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
       showMessage(authMessage, 'Configuração do Supabase ausente em config.js.');
       loginBtn.disabled = true;
-      signupBtn.disabled = true;
+      viewerBtn.disabled = true;
       return;
     }
 
@@ -1169,21 +1230,42 @@
 
     const { data, error } = await db.auth.getSession();
     if (error) showMessage(authMessage, error.message);
-    setAuthView(data?.session?.user || null);
+    const initialUser = data?.session?.user || null;
+    if (initialUser && isEditorEmail(initialUser.email)) {
+      setAccessView(initialUser, 'editor');
+    } else if (initialUser) {
+      await db.auth.signOut();
+      setAccessView(null, 'signed_out');
+      showMessage(authMessage, 'Este usuário não está autorizado como editor.');
+    } else if (sessionStorage.getItem('po_access_mode') === 'viewer') {
+      setAccessView(null, 'viewer');
+    } else {
+      setAccessView(null, 'signed_out');
+    }
 
     db.auth.onAuthStateChange((_event, session) => {
-      setAuthView(session?.user || null);
+      const user = session?.user || null;
+      if (user && isEditorEmail(user.email)) {
+        setAccessView(user, 'editor');
+      } else if (!user && accessMode !== 'viewer') {
+        setAccessView(null, 'signed_out');
+      }
     });
   }
 
   authForm.addEventListener('submit', handleLogin);
-  signupBtn.addEventListener('click', handleSignup);
+  viewerBtn.addEventListener('click', enterViewerMode);
   logoutBtn.addEventListener('click', async () => {
+    if (accessMode === 'viewer') {
+      sessionStorage.removeItem('po_access_mode');
+      setAccessView(null, 'signed_out');
+      return;
+    }
     await db.auth.signOut();
   });
 
-  newPoBtn.addEventListener('click', () => openModal());
-  importExcelBtn.addEventListener('click', () => excelFileInput.click());
+  newPoBtn.addEventListener('click', () => { if (requireEditor()) openModal(); });
+  importExcelBtn.addEventListener('click', () => { if (requireEditor()) excelFileInput.click(); });
   deleteAllPosBtn?.addEventListener('click', deleteAllOrders);
   excelFileInput.addEventListener('change', async () => {
     const file = excelFileInput.files?.[0];
@@ -1202,7 +1284,7 @@
   situationFilter?.addEventListener('change', renderTable);
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && currentUser) { loadOrders(true); loadQuotes(true); }
+    if (!document.hidden && canRead()) { loadOrders(true); loadQuotes(true); }
   });
 
 
@@ -1217,7 +1299,7 @@
   quoteStatusFilter?.addEventListener('change', renderQuoteTable);
   quoteRows?.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-quote-action]');
-    if (!button) return;
+    if (!button || !canEdit()) return;
     const id = button.dataset.id;
     const action = button.dataset.quoteAction;
     const q = quotes.find((x) => x.id === id);
@@ -1228,7 +1310,7 @@
 
   ordersBody.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-action]');
-    if (!button) return;
+    if (!button || !canEdit()) return;
     const id = button.dataset.id;
     const action = button.dataset.action;
     const order = orders.find((o) => o.id === id);
