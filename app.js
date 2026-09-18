@@ -1218,13 +1218,19 @@
         const existing = existingByKey.get(key);
 
         if (!existing) {
+          // Regra do fluxo: toda PO nova identificada na planilha entra no
+          // PO Control aguardando a confirmação/resposta do fornecedor,
+          // independentemente do status original informado no Excel.
           inserts.push({
             ...record,
             id: crypto.randomUUID(),
             user_id: syncUser.id,
-            completed_at: normalizeSystemStatus(record.status) === 'Concluído'
-              ? new Date().toISOString()
-              : null
+            status: 'Aguardando resposta do fornecedor',
+            completed_at: null,
+            supplier_sent_at: null,
+            supplier_confirmed_at: null,
+            supplier_wait_seconds: 0,
+            supplier_wait_resumed_at: null
           });
           continue;
         }
