@@ -67,7 +67,6 @@
           <p>Acompanhe a FOLLOW UP em tempo real: recebimento, produção, prazos e conclusão.</p>
         </div>
         <div class="page-actions">
-          <button id="deleteAllPosBtn" type="button" class="btn btn-danger" data-editor-only>Excluir todas as POs</button>
           <button id="importExcelBtn" type="button" class="btn btn-secondary" data-editor-only>Sincronizar Excel</button>
           <button id="newPoBtn" type="button" class="btn btn-primary" data-editor-only>+ Novo PO</button>
         </div>
@@ -189,7 +188,6 @@
             <div class="field"><label for="responsible">Responsável</label><input id="responsible" /></div>
             <div class="field"><label for="orderDate">Data do pedido</label><input id="orderDate" type="date" /></div>
             <div class="field"><label for="estimatedReadyDate">Estimativa de prontidão</label><input id="estimatedReadyDate" type="date" /></div>
-            <div class="field"><label for="actualReadyDate">Prontidão real</label><input id="actualReadyDate" type="date" /></div>
             <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option><option value="Em produção">Em produção</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
             <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
 
@@ -198,9 +196,9 @@
               <div class="extra-grid">
                 <div class="field"><label for="currency">Moeda</label><input id="currency" /></div>
                 <div class="field"><label for="transportation">Transportation</label><input id="transportation" /></div>
-                <div class="field"><label for="amountPo">Amount of PO</label><input id="amountPo" type="number" step="0.01" /></div>
+                <div class="field"><label for="amountPo">Amount of PO</label><input id="amountPo" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
                 <div class="field"><label for="supplierQuotationNo">Supplier Quotation nº</label><input id="supplierQuotationNo" /></div>
-                <div class="field"><label for="supplierPrice">Supplier Price</label><input id="supplierPrice" type="number" step="0.01" /></div>
+                <div class="field"><label for="supplierPrice">Supplier Price</label><input id="supplierPrice" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
                 <div class="field"><label for="quotationNo">Quotation NO.</label><input id="quotationNo" /></div>
                 <div class="field"><label for="workOrder">Work Order</label><input id="workOrder" /></div>
                 <div class="field"><label for="lspConsulted">LSP Consulted</label><input id="lspConsulted" /></div>

@@ -303,9 +303,9 @@ td { color:#303033; }
   margin-right: 12px;
 }
 .zpmc-link-logo-header {
-  height: 24px;
-  max-width: 82px;
-  margin-right: 10px;
+  height: 50px;
+  max-width: 140px;
+  margin-right: 12px;
 }
 .brand-minimal,
 .brand-header {
@@ -335,3 +335,38 @@ td { color:#303033; }
 .timer-done { color:#16794a; }
 .timer-not-started { color:#86868b; font-weight:500; }
 .timer-empty { color:#b0b0b5; font-weight:500; }
+
+
+/* ===== Workflow v5.4 ===== */
+.attention-jump {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.attention-jump:hover {
+  border-color: #c7d7ea;
+  background: #fafcff;
+}
+.attention-jump:focus-visible {
+  outline: 3px solid rgba(0,113,227,.16);
+  outline-offset: 1px;
+}
+.row-focus td {
+  animation: po-row-focus 2.4s ease;
+}
+@keyframes po-row-focus {
+  0%, 35% { background: #eaf4ff; }
+  100% { background: transparent; }
+}
+.completion-date {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}

@@ -19,7 +19,6 @@
 
   const newPoBtn = $('newPoBtn');
   const importExcelBtn = $('importExcelBtn');
-  const deleteAllPosBtn = $('deleteAllPosBtn');
   const excelFileInput = $('excelFileInput');
   const poModal = $('poModal');
   const closeModalBtn = $('closeModalBtn');
@@ -38,7 +37,6 @@
   const responsible = $('responsible');
   const orderDate = $('orderDate');
   const estimatedReadyDate = $('estimatedReadyDate');
-  const actualReadyDate = $('actualReadyDate');
   const poStatus = $('poStatus');
   const notes = $('notes');
 
@@ -215,6 +213,75 @@
     });
   }
 
+
+  function formatDateOnly(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  function parsePtBrNumber(value) {
+    const raw = String(value ?? '').trim().replace(/\s/g, '');
+    if (!raw) return null;
+    let normalized = raw;
+    if (normalized.includes(',')) {
+      normalized = normalized.replace(/\./g, '').replace(',', '.');
+    } else if (/^-?\d{1,3}(\.\d{3})+$/.test(normalized)) {
+      // Ex.: 3.000 ou 12.500.000 (milhar no padrão brasileiro).
+      normalized = normalized.replace(/\./g, '');
+    } else {
+      const dots = (normalized.match(/\./g) || []).length;
+      if (dots > 1) normalized = normalized.replace(/\./g, '');
+    }
+    normalized = normalized.replace(/[^0-9.-]/g, '');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatPtBrNumber(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const n = typeof value === 'number' ? value : parsePtBrNumber(value);
+    if (!Number.isFinite(n)) return '';
+    return new Intl.NumberFormat('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(n);
+  }
+
+  function formatElapsedSeconds(seconds) {
+    let totalMinutes = Math.max(0, Math.floor(Number(seconds || 0) / 60));
+    const days = Math.floor(totalMinutes / 1440);
+    totalMinutes %= 1440;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    parts.push(`${minutes}min`);
+    return parts.join(' ');
+  }
+
+  function supplierElapsedSeconds(order, endValue = null) {
+    if (!order?.supplier_sent_at) return 0;
+
+    // Versões antigas não possuíam os campos de pausa/retomada.
+    const accumulated = Math.max(0, Number(order.supplier_wait_seconds || 0));
+    const resumedAt = order.supplier_wait_resumed_at;
+
+    if (order.supplier_confirmed_at) {
+      if (accumulated > 0) return accumulated;
+      const start = new Date(order.supplier_sent_at);
+      const end = new Date(order.supplier_confirmed_at);
+      return Math.max(0, Math.floor((end - start) / 1000));
+    }
+
+    const runningFrom = new Date(resumedAt || order.supplier_sent_at);
+    const end = endValue ? new Date(endValue) : new Date();
+    if (Number.isNaN(runningFrom.getTime()) || Number.isNaN(end.getTime())) return accumulated;
+    return accumulated + Math.max(0, Math.floor((end - runningFrom) / 1000));
+  }
+
   function formatElapsed(startValue, endValue = null) {
     if (!startValue) return null;
     const start = new Date(startValue);
@@ -244,12 +311,16 @@
       return '<span class="supplier-timer timer-empty">—</span>';
     }
 
+    const elapsed = formatElapsedSeconds(supplierElapsedSeconds(order));
+
     if (confirmed) {
-      const elapsed = formatElapsed(started, confirmed) || '—';
-      return `<span class="supplier-timer timer-done">Confirmou em ${escapeHtml(elapsed)}</span><small class="supplier-timer-meta">${escapeHtml(formatDateTime(confirmed))}</small>`;
+      return `<span class="supplier-timer timer-done">Confirmou em ${escapeHtml(elapsed)}</span><small class="supplier-timer-meta">Enviada ${escapeHtml(formatDateTime(started))} • Confirmada ${escapeHtml(formatDateTime(confirmed))}</small>`;
     }
 
-    const elapsed = formatElapsed(started) || '—';
+    if (status !== 'Aguardando resposta do fornecedor') {
+      return `<span class="supplier-timer timer-empty">—</span><small class="supplier-timer-meta">PO enviada ${escapeHtml(formatDateTime(started))}</small>`;
+    }
+
     return `<span class="supplier-timer timer-running">Aguardando há ${escapeHtml(elapsed)}</span><small class="supplier-timer-meta">Enviada ${escapeHtml(formatDateTime(started))}</small>`;
   }
 
@@ -279,7 +350,7 @@
     if (status === 'Cancelado') {
       return { key: 'done', label: 'Cancelada', cls: 'neutral', days: null };
     }
-    if (status === 'Concluído' || order.actual_ready_date) {
+    if (status === 'Concluído') {
       return { key: 'done', label: 'Concluído', cls: 'neutral', days: null };
     }
     const days = daysFromToday(order.estimated_ready_date);
@@ -314,15 +385,14 @@
       responsible.value = order.responsible || '';
       orderDate.value = order.order_date || '';
       estimatedReadyDate.value = order.estimated_ready_date || '';
-      actualReadyDate.value = order.actual_ready_date || '';
       poStatus.value = normalizeSystemStatus(order.status);
       notes.value = order.notes || '';
 
       currency.value = order.currency || '';
       transportation.value = order.transportation || '';
-      amountPo.value = valueOrEmpty(order.amount_po);
+      amountPo.value = formatPtBrNumber(order.amount_po);
       supplierQuotationNo.value = order.supplier_quotation_no || '';
-      supplierPrice.value = valueOrEmpty(order.supplier_price);
+      supplierPrice.value = formatPtBrNumber(order.supplier_price);
       quotationNo.value = order.quotation_no || '';
       workOrder.value = order.work_order || '';
       lspConsulted.value = order.lsp_consulted || '';
@@ -468,14 +538,33 @@
     }
 
     attentionList.innerHTML = list.map(({ order, health }) => `
-      <div class="alert-row">
+      <button type="button" class="alert-row attention-jump" data-attention-id="${order.id}" title="Localizar este PO na lista">
         <div>
           <strong>${escapeHtml(order.po_number)} — ${escapeHtml(order.supplier)}</strong>
           <small>Estimativa: ${formatDate(order.estimated_ready_date)} • ${escapeHtml(order.client || 'Sem cliente')}</small>
         </div>
         <span class="badge ${health.cls}">${health.label}</span>
-      </div>
+      </button>
     `).join('');
+  }
+
+  function focusOrderInTable(id) {
+    if (!id) return;
+    searchInput.value = '';
+    statusFilter.value = '';
+    if (situationFilter) situationFilter.value = '';
+    renderTable();
+
+    requestAnimationFrame(() => {
+      const row = ordersBody.querySelector(`tr[data-po-id="${id}"]`);
+      if (!row) {
+        showToast('Não consegui localizar este PO na lista.', true);
+        return;
+      }
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('row-focus');
+      setTimeout(() => row.classList.remove('row-focus'), 2400);
+    });
   }
 
   function renderTable() {
@@ -514,14 +603,17 @@
     ordersBody.innerHTML = filtered.map((o) => {
       const health = getHealth(o);
       return `
-        <tr class="row-${health.key}">
+        <tr class="row-${health.key}" data-po-id="${o.id}">
           <td>${canEdit() ? `<button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button>` : `<span class="po-number-readonly">${escapeHtml(o.po_number)}</span>`}</td>
           <td>${escapeHtml(o.supplier)}</td>
           <td>${escapeHtml(o.client || '—')}</td>
           <td>${formatDate(o.estimated_ready_date)}</td>
           <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
-          <td><span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' ? 'status-waiting' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span></td>
+          <td>
+            <span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' ? 'status-waiting' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span>
+            ${normalizeSystemStatus(o.status) === 'Concluído' && o.completed_at ? `<small class="completion-date">Concluído em ${escapeHtml(formatDateOnly(o.completed_at))}</small>` : ''}
+          </td>
           <td>${supplierWaitHtml(o)}</td>
           <td>${canEdit() ? `
             <div class="actions">
@@ -529,7 +621,6 @@
               ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button class="btn btn-primary btn-small" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
               ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button class="btn btn-primary btn-small" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
               ${['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
-              <button class="btn btn-danger btn-small" data-action="delete" data-id="${o.id}">Excluir</button>
             </div>` : '<span class="readonly-text">Somente leitura</span>'}
           </td>
         </tr>
@@ -584,9 +675,7 @@
   }
 
   function optionalNumber(input) {
-    if (input.value === '') return null;
-    const n = Number(input.value);
-    return Number.isFinite(n) ? n : null;
+    return parsePtBrNumber(input.value);
   }
 
   async function handleSavePO(event) {
@@ -604,6 +693,11 @@
       return;
     }
 
+    const existing = isEditing ? orders.find((o) => o.id === poId.value) : null;
+    const oldStatus = existing ? normalizeSystemStatus(existing.status) : null;
+    const newStatus = normalizeSystemStatus(poStatus.value);
+    const now = new Date().toISOString();
+
     savePoBtn.disabled = true;
     savePoBtn.textContent = 'Salvando...';
 
@@ -616,8 +710,7 @@
       responsible: responsible.value.trim() || null,
       order_date: orderDate.value || null,
       estimated_ready_date: estimatedReadyDate.value || null,
-      actual_ready_date: actualReadyDate.value || null,
-      status: actualReadyDate.value && ['Aguardando resposta do fornecedor', 'Em produção'].includes(poStatus.value) ? 'Concluído' : poStatus.value,
+      status: newStatus,
       notes: notes.value.trim() || null,
       currency: currency.value.trim() || null,
       transportation: transportation.value.trim() || null,
@@ -630,6 +723,31 @@
       follow_up_status: followUpStatus.value.trim() || null,
       hidden_status: hiddenStatus.value.trim() || null
     };
+
+    // Data de conclusão: nasce ao concluir, some ao reabrir e recebe uma nova data
+    // somente quando o processo for concluído novamente.
+    if (newStatus === 'Concluído') {
+      payload.completed_at = oldStatus === 'Concluído' && existing?.completed_at
+        ? existing.completed_at
+        : now;
+    } else {
+      payload.completed_at = null;
+    }
+
+    // Se a confirmação do fornecedor foi marcada por engano e o usuário voltar
+    // para "Aguardando resposta", a contagem retoma exatamente do ponto em que parou.
+    // supplier_sent_at continua sendo a data/hora ORIGINAL do envio.
+    if (
+      existing &&
+      newStatus === 'Aguardando resposta do fornecedor' &&
+      oldStatus !== 'Aguardando resposta do fornecedor' &&
+      existing.supplier_sent_at &&
+      existing.supplier_confirmed_at
+    ) {
+      payload.supplier_wait_seconds = supplierElapsedSeconds(existing, existing.supplier_confirmed_at);
+      payload.supplier_wait_resumed_at = now;
+      payload.supplier_confirmed_at = null;
+    }
 
     let result;
     try {
@@ -670,14 +788,14 @@
     if (!requireEditor()) return;
     const { error } = await db
       .from('purchase_orders')
-      .update({ actual_ready_date: todayISO(), status: 'Concluído' })
+      .update({ completed_at: new Date().toISOString(), status: 'Concluído' })
       .eq('id', id);
 
     if (error) {
       showToast(`Erro ao atualizar: ${error.message}`, true);
       return;
     }
-    showToast('PO concluído.');
+    showToast('PO concluído. Data da conclusão registrada.');
     await loadOrders();
   }
 
@@ -694,7 +812,9 @@
       .update({
         status: 'Aguardando resposta do fornecedor',
         supplier_sent_at: now,
-        supplier_confirmed_at: null
+        supplier_confirmed_at: null,
+        supplier_wait_seconds: 0,
+        supplier_wait_resumed_at: now
       })
       .eq('id', id);
 
@@ -716,11 +836,13 @@
     }
 
     const now = new Date().toISOString();
-    const elapsed = formatElapsed(order.supplier_sent_at, now);
+    const elapsedSeconds = supplierElapsedSeconds(order, now);
     const { error } = await db
       .from('purchase_orders')
       .update({
         supplier_confirmed_at: now,
+        supplier_wait_seconds: elapsedSeconds,
+        supplier_wait_resumed_at: null,
         status: 'Em produção'
       })
       .eq('id', id);
@@ -729,64 +851,8 @@
       showToast(`Erro ao registrar confirmação: ${error.message}`, true, 6000);
       return;
     }
-    showToast(`Fornecedor confirmou. Tempo de resposta: ${elapsed || 'registrado'}.`);
+    showToast(`Fornecedor confirmou. Tempo de resposta: ${formatElapsedSeconds(elapsedSeconds)}.`);
     await loadOrders(true);
-  }
-
-  async function deleteOrder(id) {
-    const order = orders.find((o) => o.id === id);
-    if (!order || !requireEditor()) return;
-    if (!confirm(`Excluir o PO ${order.po_number}?`)) return;
-
-    const { error } = await db
-      .from('purchase_orders')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      showToast(`Erro ao excluir: ${error.message}`, true);
-      return;
-    }
-    showToast('PO excluído.');
-    await loadOrders();
-  }
-
-  async function deleteAllOrders() {
-    if (!requireEditor()) return;
-
-    const total = orders.length;
-    if (!total) {
-      showToast('Não há POs para excluir.');
-      return;
-    }
-
-    const confirmation = prompt(
-      `ATENÇÃO: isso excluirá ${total} PO${total === 1 ? '' : 's'} da base compartilhada.\n\nAs Cotações China não serão apagadas.\n\nDigite EXCLUIR para confirmar:`
-    );
-
-    if (confirmation !== 'EXCLUIR') {
-      if (confirmation !== null) showToast('Exclusão cancelada. Digite EXCLUIR exatamente para confirmar.', true);
-      return;
-    }
-
-    deleteAllPosBtn.disabled = true;
-    deleteAllPosBtn.textContent = 'Excluindo...';
-
-    const { error } = await db
-      .from('purchase_orders')
-      .delete()
-      .not('id', 'is', null);
-
-    deleteAllPosBtn.disabled = false;
-    deleteAllPosBtn.textContent = 'Excluir todas as POs';
-
-    if (error) {
-      showToast(`Erro ao excluir todas as POs: ${error.message}`, true);
-      return;
-    }
-
-    showToast(`${total} PO${total === 1 ? '' : 's'} excluída${total === 1 ? '' : 's'} com sucesso.`);
-    await loadOrders();
   }
 
   function cleanText(value) {
@@ -1221,7 +1287,6 @@
         <td>${canEdit() ? `<div class="actions">
           ${!q.response_at ? `<button class="btn btn-primary btn-small" data-quote-action="answered" data-id="${q.id}">Respondida</button>` : ''}
           <button class="btn btn-secondary btn-small" data-quote-action="edit" data-id="${q.id}">Editar</button>
-          <button class="btn btn-danger btn-small" data-quote-action="delete" data-id="${q.id}">Excluir</button>
         </div>` : '<span class="readonly-text">Somente leitura</span>'}</td>
       </tr>`;
     }).join('');
@@ -1328,16 +1393,6 @@
     await loadQuotes();
   }
 
-  async function deleteQuote(id) {
-    const q = quotes.find((x) => x.id === id);
-    if (!q || !requireEditor()) return;
-    if (!confirm(`Excluir a cotação ${q.reference}?`)) return;
-    const { error } = await db.from('china_quotes').delete().eq('id', id);
-    if (error) { showToast(`Erro ao excluir: ${error.message}`, true); return; }
-    showToast('Cotação excluída.');
-    await loadQuotes();
-  }
-
   async function init() {
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
       showMessage(authMessage, 'Configuração do Supabase ausente em config.js.');
@@ -1391,7 +1446,6 @@
 
   newPoBtn.addEventListener('click', () => { if (requireEditor()) openModal(); });
   importExcelBtn.addEventListener('click', () => { if (requireEditor()) excelFileInput.click(); });
-  deleteAllPosBtn?.addEventListener('click', deleteAllOrders);
   excelFileInput.addEventListener('change', async () => {
     const file = excelFileInput.files?.[0];
     if (file) await handleExcelImport(file);
@@ -1407,6 +1461,19 @@
   searchInput.addEventListener('input', renderTable);
   statusFilter.addEventListener('change', renderTable);
   situationFilter?.addEventListener('change', renderTable);
+
+  attentionList.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-attention-id]');
+    if (target) focusOrderInTable(target.dataset.attentionId);
+  });
+
+  [amountPo, supplierPrice].forEach((input) => {
+    input?.addEventListener('blur', () => {
+      const n = parsePtBrNumber(input.value);
+      input.value = n === null ? '' : formatPtBrNumber(n);
+    });
+    input?.addEventListener('focus', () => input.select());
+  });
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && canRead()) { loadOrders(true); loadQuotes(true); }
@@ -1430,7 +1497,6 @@
     const q = quotes.find((x) => x.id === id);
     if (action === 'edit' && q) openQuoteModal(q);
     if (action === 'answered') await markQuoteAnswered(id);
-    if (action === 'delete') await deleteQuote(id);
   });
 
   ordersBody.addEventListener('click', async (event) => {
@@ -1444,7 +1510,6 @@
     if (action === 'supplier-start') await startSupplierWait(id);
     if (action === 'supplier-confirm') await confirmSupplierReceipt(id);
     if (action === 'complete') await markCompleted(id);
-    if (action === 'delete') await deleteOrder(id);
   });
 
   init();
