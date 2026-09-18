@@ -1099,6 +1099,14 @@
     importExcelBtn.textContent = 'Lendo Excel...';
 
     try {
+      // Confirma a sessão direto no Supabase antes de sincronizar.
+      // Isso evita inserir POs novas com user_id vazio caso a sessão em memória esteja desatualizada.
+      const { data: authData, error: authError } = await db.auth.getUser();
+      const syncUser = authData?.user || null;
+      if (authError || !syncUser?.id || !isEditorEmail(syncUser.email)) {
+        throw new Error('Sua sessão de editor expirou ou não foi encontrada. Saia do sistema, entre novamente e tente sincronizar.');
+      }
+
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
       const sheetName = workbook.SheetNames.find((n) => n.trim().toUpperCase() === 'FOLLOW UP') || workbook.SheetNames[0];
@@ -1145,7 +1153,7 @@
           inserts.push({
             ...record,
             id: crypto.randomUUID(),
-            user_id: currentUser.id,
+            user_id: syncUser.id,
             completed_at: normalizeSystemStatus(record.status) === 'Concluído'
               ? new Date().toISOString()
               : null
@@ -1192,7 +1200,10 @@
       // Novas linhas podem ser inseridas em lote.
       const batchSize = 80;
       for (let i = 0; i < inserts.length; i += batchSize) {
-        const batch = inserts.slice(i, i + batchSize);
+        const batch = inserts.slice(i, i + batchSize).map((row) => ({
+          ...row,
+          user_id: row.user_id || syncUser.id
+        }));
         importExcelBtn.textContent = `Incluindo ${Math.min(i + batch.length, inserts.length)}/${inserts.length}...`;
         const { error } = await db.from('purchase_orders').insert(batch);
         if (error) throw new Error(`Erro ao incluir novas POs: ${error.message}`);
