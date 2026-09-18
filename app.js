@@ -207,6 +207,50 @@
   }
 
 
+  async function deleteOrderWithPassword(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+
+    const email = normalizedEmail(currentUser?.email);
+    if (!email) {
+      showToast('Sua sessão expirou. Entre novamente antes de excluir.', true, 6000);
+      return;
+    }
+
+    const password = prompt(`Excluir PO ${order.po_number}\n\nDigite sua senha de acesso ao PO Control para continuar:`);
+    if (password === null) return;
+    if (!password) {
+      showToast('A senha é obrigatória para excluir uma PO.', true, 5000);
+      return;
+    }
+
+    showToast('Verificando senha...', false, 1800);
+    const { error: authError } = await db.auth.signInWithPassword({ email, password });
+    if (authError) {
+      showToast('Senha incorreta. A PO não foi excluída.', true, 6000);
+      return;
+    }
+
+    if (!confirm(`Senha confirmada. Excluir definitivamente a PO ${order.po_number}?`)) {
+      showToast('Exclusão cancelada.');
+      return;
+    }
+
+    const { error } = await db
+      .from('purchase_orders')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao excluir a PO: ${error.message}`, true, 7000);
+      return;
+    }
+
+    showToast(`PO ${order.po_number} excluída.`);
+    await loadOrders(true);
+  }
+
   function formatDateTime(value) {
     if (!value) return '—';
     const d = new Date(value);
@@ -688,6 +732,12 @@
               ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button class="btn btn-primary btn-small" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
               ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button class="btn btn-primary btn-small" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
               ${['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
+              <details class="po-row-menu">
+                <summary title="Mais opções" aria-label="Mais opções para a PO ${escapeHtml(o.po_number)}">•••</summary>
+                <div class="po-row-menu-popover">
+                  <button type="button" class="po-delete-option" data-action="delete-protected" data-id="${o.id}">Excluir PO</button>
+                </div>
+              </details>
             </div>` : '<span class="readonly-text">Somente leitura</span>'}
           </td>
         </tr>
@@ -1725,6 +1775,7 @@
     if (action === 'supplier-start') await startSupplierWait(id);
     if (action === 'supplier-confirm') await confirmSupplierReceipt(id);
     if (action === 'complete') await markCompleted(id);
+    if (action === 'delete-protected') await deleteOrderWithPassword(id);
   });
 
   init();
