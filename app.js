@@ -1167,9 +1167,12 @@
       }
 
       const incomingKeys = new Set(records.map(importRowKey));
-      const missingCount = (existingData || []).filter(
+      // A planilha passa a ser a fonte de verdade somente para registros que vieram dela.
+      // POs manuais não entram em existingData, pois a consulta acima exige import_source preenchido.
+      const removedRows = (existingData || []).filter(
         (row) => !incomingKeys.has(`${row.source_no ?? 'x'}|${row.po_number}`)
-      ).length;
+      );
+      const removedIds = removedRows.map((row) => row.id);
 
       const analysis = analyzeRecords(records);
       const message = [
@@ -1178,20 +1181,20 @@
         `Novas POs: ${inserts.length}`,
         `POs alteradas: ${updates.length}`,
         `Sem alteração: ${unchangedCount}`,
-        missingCount ? `Não presentes neste arquivo: ${missingCount} (serão mantidas no sistema)` : '',
+        removedIds.length ? `Removidas da planilha: ${removedIds.length} (serão removidas do sistema)` : '',
         '',
         `Atrasados no arquivo: ${analysis.late}`,
         `Vencem hoje: ${analysis.today}`,
         `Próximos (1–4 dias): ${analysis.near}`,
         '',
-        inserts.length || updates.length
+        inserts.length || updates.length || removedIds.length
           ? 'Sincronizar somente as diferenças?'
           : 'Nenhuma diferença encontrada. Fechar a sincronização?'
       ].filter(Boolean).join('\n');
 
       if (!confirm(message)) return;
 
-      if (!inserts.length && !updates.length) {
+      if (!inserts.length && !updates.length && !removedIds.length) {
         showToast(`FOLLOW UP conferida: ${unchangedCount} POs sem alteração. Nada foi regravado.`, false, 6000);
         setSync('Sem alterações');
         return;
@@ -1224,8 +1227,18 @@
         if (failed?.error) throw new Error(`Erro ao atualizar PO: ${failed.error.message}`);
       }
 
+      // Remove do sistema somente as linhas que vieram do Excel e não existem mais
+      // na versão atual da FOLLOW UP. POs cadastradas manualmente são preservadas.
+      for (let i = 0; i < removedIds.length; i += 100) {
+        const ids = removedIds.slice(i, i + 100);
+        importExcelBtn.textContent = `Removendo ${Math.min(i + ids.length, removedIds.length)}/${removedIds.length}...`;
+        setSync(`Removendo POs excluídas da planilha • ${Math.min(i + ids.length, removedIds.length)}/${removedIds.length}`);
+        const { error } = await db.from('purchase_orders').delete().in('id', ids);
+        if (error) throw new Error(`Erro ao remover POs que saíram da planilha: ${error.message}`);
+      }
+
       showToast(
-        `FOLLOW UP sincronizada: ${inserts.length} novas, ${updates.length} alteradas, ${unchangedCount} ignoradas por estarem iguais.`,
+        `FOLLOW UP sincronizada: ${inserts.length} novas, ${updates.length} alteradas, ${removedIds.length} removidas, ${unchangedCount} ignoradas por estarem iguais.`,
         false,
         8000
       );
