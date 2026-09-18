@@ -56,6 +56,7 @@
   const searchInput = $('searchInput');
   const statusFilter = $('statusFilter');
   const situationFilter = $('situationFilter');
+  const orderDateSort = $('orderDateSort');
   const metricTotal = $('metricTotal');
   const metricActive = $('metricActive');
   const metricOnTime = $('metricOnTime');
@@ -634,15 +635,32 @@
       return (!search || text.includes(search)) && (!status || normalizeSystemStatus(o.status) === status) && situationOk;
     });
 
-    const priority = { late: 0, near: 1, ontime: 2, unknown: 3, done: 4 };
-    filtered.sort((a, b) => {
-      const ah = getHealth(a), bh = getHealth(b);
-      const p = (priority[ah.key] ?? 9) - (priority[bh.key] ?? 9);
-      if (p) return p;
-      if (ah.key === 'late') return (ah.days ?? 0) - (bh.days ?? 0);
-      if (ah.key === 'near' || ah.key === 'ontime') return (ah.days ?? 9999) - (bh.days ?? 9999);
-      return String(a.po_number || '').localeCompare(String(b.po_number || ''));
-    });
+    const dateSort = orderDateSort?.value || '';
+    if (dateSort === 'recent' || dateSort === 'oldest') {
+      filtered.sort((a, b) => {
+        const ad = dateFromISO(a.order_date);
+        const bd = dateFromISO(b.order_date);
+
+        // POs sem Data do pedido ficam no final em ambas as ordenações.
+        if (!ad && !bd) return String(a.po_number || '').localeCompare(String(b.po_number || ''));
+        if (!ad) return 1;
+        if (!bd) return -1;
+
+        const diff = ad - bd;
+        if (diff) return dateSort === 'recent' ? -diff : diff;
+        return String(a.po_number || '').localeCompare(String(b.po_number || ''));
+      });
+    } else {
+      const priority = { late: 0, near: 1, ontime: 2, unknown: 3, done: 4 };
+      filtered.sort((a, b) => {
+        const ah = getHealth(a), bh = getHealth(b);
+        const p = (priority[ah.key] ?? 9) - (priority[bh.key] ?? 9);
+        if (p) return p;
+        if (ah.key === 'late') return (ah.days ?? 0) - (bh.days ?? 0);
+        if (ah.key === 'near' || ah.key === 'ontime') return (ah.days ?? 9999) - (bh.days ?? 9999);
+        return String(a.po_number || '').localeCompare(String(b.po_number || ''));
+      });
+    }
 
     if (!filtered.length) {
       ordersBody.innerHTML = '<tr><td colspan="9" class="empty">Nenhum PO encontrado.</td></tr>';
@@ -1634,6 +1652,7 @@
   searchInput.addEventListener('input', renderTable);
   statusFilter.addEventListener('change', renderTable);
   situationFilter?.addEventListener('change', renderTable);
+  orderDateSort?.addEventListener('change', renderTable);
 
   attentionList.addEventListener('click', (event) => {
     const target = event.target.closest('[data-attention-id]');
