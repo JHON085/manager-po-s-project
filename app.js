@@ -56,11 +56,14 @@
   const searchInput = $('searchInput');
   const statusFilter = $('statusFilter');
   const situationFilter = $('situationFilter');
+  const metricTotal = $('metricTotal');
   const metricActive = $('metricActive');
   const metricOnTime = $('metricOnTime');
   const metricNear = $('metricNear');
   const metricLate = $('metricLate');
   const metricDone = $('metricDone');
+  const recentOrdersList = $('recentOrdersList');
+  const oldestOrdersList = $('oldestOrdersList');
   const toast = $('toast');
 
 
@@ -518,11 +521,57 @@
   function renderMetrics() {
     const active = orders.filter((o) => ['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)));
     const health = active.map(getHealth);
+    if (metricTotal) metricTotal.textContent = orders.length;
     metricActive.textContent = active.length;
     metricOnTime.textContent = health.filter((h) => h.key === 'ontime').length;
     metricNear.textContent = health.filter((h) => h.key === 'near').length;
     metricLate.textContent = health.filter((h) => h.key === 'late').length;
     if (metricDone) metricDone.textContent = orders.filter((o) => normalizeSystemStatus(o.status) === 'Concluído').length;
+  }
+
+  function renderOrderAgeSummary() {
+    if (!recentOrdersList || !oldestOrdersList) return;
+
+    const dated = orders
+      .filter((o) => dateFromISO(o.order_date))
+      .slice()
+      .sort((a, b) => dateFromISO(a.order_date) - dateFromISO(b.order_date));
+
+    if (!dated.length) {
+      const empty = '<div class="empty compact-empty">Sem POs com Data do pedido.</div>';
+      recentOrdersList.innerHTML = empty;
+      oldestOrdersList.innerHTML = empty;
+      return;
+    }
+
+    const uniqueByPo = (items) => {
+      const seen = new Set();
+      const result = [];
+      for (const order of items) {
+        const key = String(order.po_number || order.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(order);
+        if (result.length === 3) break;
+      }
+      return result;
+    };
+
+    const oldest = uniqueByPo(dated);
+    const recent = uniqueByPo(dated.slice().reverse());
+
+    const itemHtml = (order) => `
+      <button type="button" class="po-age-item" data-history-id="${order.id}" title="Localizar esta PO na tabela">
+        <div class="po-age-main">
+          <strong>${escapeHtml(order.po_number || 'Sem PO')}</strong>
+          <span>${escapeHtml(order.supplier || 'Sem fornecedor')}</span>
+        </div>
+        <time>${escapeHtml(formatDate(order.order_date))}</time>
+      </button>
+    `;
+
+    recentOrdersList.innerHTML = recent.map(itemHtml).join('');
+    oldestOrdersList.innerHTML = oldest.map(itemHtml).join('');
   }
 
   function renderAttention() {
@@ -630,6 +679,7 @@
 
   function render() {
     renderMetrics();
+    renderOrderAgeSummary();
     renderAttention();
     renderTable();
   }
@@ -1588,6 +1638,15 @@
   attentionList.addEventListener('click', (event) => {
     const target = event.target.closest('[data-attention-id]');
     if (target) focusOrderInTable(target.dataset.attentionId);
+  });
+
+  recentOrdersList?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-history-id]');
+    if (btn) focusOrderInTable(btn.dataset.historyId);
+  });
+  oldestOrdersList?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-history-id]');
+    if (btn) focusOrderInTable(btn.dataset.historyId);
   });
 
   [amountPo, supplierPrice].forEach((input) => {

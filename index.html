@@ -73,11 +73,31 @@
       </div>
 
       <section class="metrics">
+        <div class="metric total"><div class="label">Total de POs</div><div id="metricTotal" class="value">0</div><div class="hint">Todos os registros da base</div></div>
         <div class="metric"><div class="label">POs ativos</div><div id="metricActive" class="value">0</div><div class="hint">Ainda em acompanhamento</div></div>
         <div class="metric success"><div class="label">No prazo</div><div id="metricOnTime" class="value">0</div><div class="hint">Mais de 4 dias</div></div>
         <div class="metric warning"><div class="label">Próximos</div><div id="metricNear" class="value">0</div><div class="hint">Hoje ou nos próximos 4 dias</div></div>
         <div class="metric danger"><div class="label">Atrasados</div><div id="metricLate" class="value">0</div><div class="hint">Prontidão prevista já passou</div></div>
         <div class="metric done"><div class="label">Concluídos</div><div id="metricDone" class="value">0</div><div class="hint">Finalizados na FOLLOW UP</div></div>
+      </section>
+
+      <section class="panel po-age-panel">
+        <div class="panel-head">
+          <div>
+            <h3>Histórico das POs</h3>
+            <p class="panel-subtitle">Mais recentes e mais antigas pela Data do pedido</p>
+          </div>
+        </div>
+        <div class="po-age-grid">
+          <div class="po-age-column">
+            <div class="po-age-title">Mais recentes</div>
+            <div id="recentOrdersList" class="po-age-list"><div class="empty compact-empty">Sem datas disponíveis.</div></div>
+          </div>
+          <div class="po-age-column">
+            <div class="po-age-title">Mais antigas</div>
+            <div id="oldestOrdersList" class="po-age-list"><div class="empty compact-empty">Sem datas disponíveis.</div></div>
+          </div>
+        </div>
       </section>
 
       <section class="panel">

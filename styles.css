@@ -303,9 +303,9 @@ td { color:#303033; }
   margin-right: 12px;
 }
 .zpmc-link-logo-header {
-  height: 50px;
-  max-width: 140px;
-  margin-right: 12px;
+  height: 24px;
+  max-width: 82px;
+  margin-right: 10px;
 }
 .brand-minimal,
 .brand-header {
@@ -369,4 +369,25 @@ td { color:#303033; }
   color: var(--muted);
   font-size: 10px;
   white-space: nowrap;
+}
+
+
+/* ===== Resumo histórico das POs v5.6 ===== */
+.metric.total .value { color: var(--primary); }
+.panel-subtitle { margin:4px 0 0; color:var(--muted); font-size:11px; }
+.po-age-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; }
+.po-age-column { padding:14px 16px 16px; }
+.po-age-column + .po-age-column { border-left:1px solid var(--border); }
+.po-age-title { color:#6e6e73; font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+.po-age-list { display:grid; gap:6px; }
+.po-age-item { width:100%; display:flex; justify-content:space-between; align-items:center; gap:14px; border:1px solid transparent; border-radius:8px; padding:9px 10px; background:#fafafa; color:inherit; text-align:left; font:inherit; cursor:pointer; }
+.po-age-item:hover { background:#f4f7fb; border-color:#e2e8f0; }
+.po-age-main { min-width:0; display:flex; align-items:baseline; gap:8px; }
+.po-age-main strong { font-size:12px; white-space:nowrap; }
+.po-age-main span { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.po-age-item time { flex:0 0 auto; color:#6e6e73; font-size:11px; font-variant-numeric:tabular-nums; }
+.compact-empty { padding:12px !important; font-size:11px; }
+@media (max-width:700px) {
+  .po-age-grid { grid-template-columns:1fr; }
+  .po-age-column + .po-age-column { border-left:0; border-top:1px solid var(--border); }
 }
