@@ -977,6 +977,14 @@
     return key ? row[key] : null;
   }
 
+  function getFirstCell(row, headers) {
+    for (const header of headers) {
+      const value = getCell(row, header);
+      if (value !== null && value !== undefined && value !== '') return value;
+    }
+    return null;
+  }
+
   function parseIncoterm(value) {
     const raw = String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
     if (!raw) return null;
@@ -1032,8 +1040,8 @@
       origin: null,
       incoterm: parseIncoterm(transportationRaw),
       responsible: null,
-      order_date: excelDateToISO(getCell(row, 'PO Received')),
-      estimated_ready_date: excelDateToISO(getCell(row, 'Promised delivery time Quotation')),
+      order_date: excelDateToISO(getFirstCell(row, ['PO Processing Date', 'PO Received'])),
+      estimated_ready_date: excelDateToISO(getFirstCell(row, ['ETD (Promised delivery time)', 'Promised delivery time Quotation'])),
       actual_ready_date: null,
       status: mapExcelStatus(followStatus, hidden),
       notes: null,
