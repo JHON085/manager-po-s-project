@@ -1003,6 +1003,91 @@
     };
   }
 
+  function syncComparable(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? Number(value.toFixed(8)) : null;
+    return String(value).trim();
+  }
+
+  function syncValuesEqual(a, b) {
+    return syncComparable(a) === syncComparable(b);
+  }
+
+  function buildExcelPatch(existing, incoming) {
+    // Somente campos que pertencem à FOLLOW UP podem ser sobrescritos pela planilha.
+    // Campos internos do PO Control (observações manuais, cronômetros, conclusão etc.)
+    // ficam protegidos.
+    const excelFields = [
+      'supplier',
+      'client',
+      'incoterm',
+      'order_date',
+      'estimated_ready_date',
+      'currency',
+      'transportation',
+      'amount_po',
+      'supplier_quotation_no',
+      'supplier_price',
+      'quotation_no',
+      'work_order',
+      'lsp_consulted',
+      'follow_up_status',
+      'hidden_status'
+    ];
+
+    const patch = {};
+    for (const field of excelFields) {
+      if (!syncValuesEqual(existing[field], incoming[field])) {
+        patch[field] = incoming[field];
+      }
+    }
+
+    const excelStatusChanged =
+      !syncValuesEqual(existing.follow_up_status, incoming.follow_up_status) ||
+      !syncValuesEqual(existing.hidden_status, incoming.hidden_status);
+
+    // O status interno só acompanha a planilha quando o status da própria planilha mudou.
+    // Assim uma simples alteração de preço/prazo não desfaz um fluxo manual do PO Control.
+    if (excelStatusChanged) {
+      const oldStatus = normalizeSystemStatus(existing.status);
+      const nextStatus = normalizeSystemStatus(incoming.status);
+
+      if (oldStatus !== nextStatus) {
+        patch.status = nextStatus;
+
+        // Mantém a mesma regra da edição manual: ao concluir, grava a data;
+        // ao voltar atrás, limpa a conclusão para registrar uma nova data depois.
+        if (nextStatus === 'Concluído') {
+          patch.completed_at = oldStatus === 'Concluído' && existing.completed_at
+            ? existing.completed_at
+            : new Date().toISOString();
+        } else if (oldStatus === 'Concluído') {
+          patch.completed_at = null;
+        }
+
+        // Se a planilha voltar para "Aguardando resposta" após uma confirmação,
+        // retoma o contador sem perder a data original do envio nem o tempo acumulado.
+        if (
+          nextStatus === 'Aguardando resposta do fornecedor' &&
+          existing.supplier_sent_at &&
+          existing.supplier_confirmed_at
+        ) {
+          patch.supplier_wait_seconds = supplierElapsedSeconds(existing, existing.supplier_confirmed_at);
+          patch.supplier_wait_resumed_at = new Date().toISOString();
+          patch.supplier_confirmed_at = null;
+        }
+      }
+    }
+
+    if (Object.keys(patch).length) {
+      patch.source_data = incoming.source_data;
+      patch.import_source = incoming.import_source;
+      patch.import_fingerprint = existing.import_fingerprint || incoming.import_fingerprint;
+    }
+
+    return patch;
+  }
+
   async function handleExcelImport(file) {
     if (!requireEditor('Somente editores podem sincronizar a FOLLOW UP.')) return;
     if (!window.XLSX) {
@@ -1023,101 +1108,116 @@
       const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
       const mapped = rawRows.map((row) => excelRowToRecord(row, file.name)).filter(Boolean);
 
-      // A chave NO. + Purchase Order é estável e permite atualizar a mesma linha
-      // quando prazo, status, preço ou outros campos mudarem na FOLLOW UP.
       const uniqueMap = new Map();
       for (const record of mapped) uniqueMap.set(importRowKey(record), record);
       const records = [...uniqueMap.values()];
       if (!records.length) throw new Error('Nenhum PO válido foi encontrado na planilha.');
 
-      const analysis = analyzeRecords(records);
-      const message = [
-        `FOLLOW UP encontrada: ${records.length} registros válidos.`,
-        '',
-        `🔴 Atrasados: ${analysis.late}`,
-        `🟠 Vencem hoje: ${analysis.today}`,
-        `🟡 Próximos (1–4 dias): ${analysis.near}`,
-        `🟢 No prazo (+4 dias): ${analysis.ontime}`,
-        `✅ Concluídos: ${analysis.done}`,
-        analysis.unknown ? `⚪ Sem data reconhecível: ${analysis.unknown}` : '',
-        '',
-        'Sincronizar esta versão da planilha com o PO Control?'
-      ].filter(Boolean).join('\n');
-      if (!confirm(message)) return;
-
-      setSync('Comparando com o Supabase...');
+      setSync('Comparando alterações...');
       const { data: existingData, error: existingError } = await db
         .from('purchase_orders')
-        .select('id,user_id,source_no,po_number,import_fingerprint,import_source')
+        .select(`
+          id,user_id,source_no,po_number,import_fingerprint,import_source,
+          supplier,client,incoterm,order_date,estimated_ready_date,
+          currency,transportation,amount_po,supplier_quotation_no,supplier_price,
+          quotation_no,work_order,lsp_consulted,follow_up_status,hidden_status,
+          status,completed_at,supplier_sent_at,supplier_confirmed_at,
+          supplier_wait_seconds,supplier_wait_resumed_at
+        `)
         .not('import_source', 'is', null);
       if (existingError) throw new Error(existingError.message);
 
       const existingByKey = new Map();
-      const duplicateIds = [];
       for (const row of (existingData || [])) {
         const key = `${row.source_no ?? 'x'}|${row.po_number}`;
         if (!existingByKey.has(key)) existingByKey.set(key, row);
-        else duplicateIds.push(row.id);
+      }
+
+      const inserts = [];
+      const updates = [];
+      let unchangedCount = 0;
+
+      for (const record of records) {
+        const key = importRowKey(record);
+        const existing = existingByKey.get(key);
+
+        if (!existing) {
+          inserts.push({
+            ...record,
+            id: crypto.randomUUID(),
+            user_id: currentUser.id,
+            completed_at: normalizeSystemStatus(record.status) === 'Concluído'
+              ? new Date().toISOString()
+              : null
+          });
+          continue;
+        }
+
+        const patch = buildExcelPatch(existing, record);
+        if (Object.keys(patch).length) updates.push({ id: existing.id, patch });
+        else unchangedCount++;
       }
 
       const incomingKeys = new Set(records.map(importRowKey));
-      const nowIds = new Set();
-      let updatedCount = 0;
-      let newCount = 0;
+      const missingCount = (existingData || []).filter(
+        (row) => !incomingKeys.has(`${row.source_no ?? 'x'}|${row.po_number}`)
+      ).length;
 
-      const synced = records.map((record) => {
-        const key = importRowKey(record);
-        const existing = existingByKey.get(key);
-        if (existing) {
-          updatedCount++;
-          nowIds.add(existing.id);
-          return {
-            ...record,
-            id: existing.id,
-            user_id: existing.user_id || currentUser.id,
-            // Mantém o fingerprint antigo se essa linha veio de uma versão anterior,
-            // evitando conflito na primeira sincronização desta nova versão.
-            import_fingerprint: existing.import_fingerprint || record.import_fingerprint
-          };
-        }
-        newCount++;
-        return { ...record, id: crypto.randomUUID() };
-      });
+      const analysis = analyzeRecords(records);
+      const message = [
+        `FOLLOW UP encontrada: ${records.length} registros válidos.`,
+        '',
+        `Novas POs: ${inserts.length}`,
+        `POs alteradas: ${updates.length}`,
+        `Sem alteração: ${unchangedCount}`,
+        missingCount ? `Não presentes neste arquivo: ${missingCount} (serão mantidas no sistema)` : '',
+        '',
+        `Atrasados no arquivo: ${analysis.late}`,
+        `Vencem hoje: ${analysis.today}`,
+        `Próximos (1–4 dias): ${analysis.near}`,
+        '',
+        inserts.length || updates.length
+          ? 'Sincronizar somente as diferenças?'
+          : 'Nenhuma diferença encontrada. Fechar a sincronização?'
+      ].filter(Boolean).join('\n');
 
+      if (!confirm(message)) return;
+
+      if (!inserts.length && !updates.length) {
+        showToast(`FOLLOW UP conferida: ${unchangedCount} POs sem alteração. Nada foi regravado.`, false, 6000);
+        setSync('Sem alterações');
+        return;
+      }
+
+      // Novas linhas podem ser inseridas em lote.
       const batchSize = 80;
-      for (let i = 0; i < synced.length; i += batchSize) {
-        const batch = synced.slice(i, i + batchSize);
-        importExcelBtn.textContent = `Sincronizando ${Math.min(i + batch.length, synced.length)}/${synced.length}...`;
-        setSync(`Sincronizando ${Math.min(i + batch.length, synced.length)}/${synced.length}`);
-
-        const { error } = await db
-          .from('purchase_orders')
-          .upsert(batch, { onConflict: 'id', ignoreDuplicates: false });
-
-        if (error) {
-          const migrationHint = /column|constraint|estimated_ready_date|import_fingerprint/i.test(error.message)
-            ? ' Rode primeiro o arquivo migration_excel_import.sql no SQL Editor do Supabase.'
-            : '';
-          throw new Error(`${error.message}.${migrationHint}`);
-        }
+      for (let i = 0; i < inserts.length; i += batchSize) {
+        const batch = inserts.slice(i, i + batchSize);
+        importExcelBtn.textContent = `Incluindo ${Math.min(i + batch.length, inserts.length)}/${inserts.length}...`;
+        const { error } = await db.from('purchase_orders').insert(batch);
+        if (error) throw new Error(`Erro ao incluir novas POs: ${error.message}`);
       }
 
-      // Remove linhas antigas da importação que deixaram de existir na planilha atual
-      // e duplicatas históricas, mantendo POs criados manualmente intactos.
-      const staleIds = (existingData || [])
-        .filter((row) => !incomingKeys.has(`${row.source_no ?? 'x'}|${row.po_number}`))
-        .map((row) => row.id);
-      const toDelete = [...new Set([...duplicateIds, ...staleIds])];
-      for (let i = 0; i < toDelete.length; i += 100) {
-        const ids = toDelete.slice(i, i + 100);
-        const { error } = await db
-          .from('purchase_orders')
-          .delete()
-          .in('id', ids);
-        if (error) throw new Error(`Dados sincronizados, mas houve erro ao limpar linhas antigas: ${error.message}`);
+      // Só atualiza as POs que realmente mudaram.
+      // Rodamos poucas em paralelo para não sobrecarregar o navegador/Supabase.
+      const concurrency = 8;
+      for (let i = 0; i < updates.length; i += concurrency) {
+        const slice = updates.slice(i, i + concurrency);
+        importExcelBtn.textContent = `Atualizando ${Math.min(i + slice.length, updates.length)}/${updates.length}...`;
+        setSync(`Atualizando somente alterações • ${Math.min(i + slice.length, updates.length)}/${updates.length}`);
+
+        const results = await Promise.all(slice.map(({ id, patch }) =>
+          db.from('purchase_orders').update(patch).eq('id', id)
+        ));
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw new Error(`Erro ao atualizar PO: ${failed.error.message}`);
       }
 
-      showToast(`FOLLOW UP sincronizada: ${newCount} novos, ${updatedCount} atualizados${toDelete.length ? `, ${toDelete.length} antigos removidos` : ''}.`, false, 7000);
+      showToast(
+        `FOLLOW UP sincronizada: ${inserts.length} novas, ${updates.length} alteradas, ${unchangedCount} ignoradas por estarem iguais.`,
+        false,
+        8000
+      );
       await loadOrders();
     } catch (err) {
       console.error(err);
@@ -1129,7 +1229,6 @@
       excelFileInput.value = '';
     }
   }
-
 
 
   function formatDateTime(value) {
