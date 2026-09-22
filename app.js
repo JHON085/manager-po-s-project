@@ -215,40 +215,33 @@
     if (!order) return;
 
     const email = normalizedEmail(currentUser?.email);
-    if (!email) {
-      showToast('Sua sessão expirou. Entre novamente antes de excluir.', true, 6000);
+    if (!email || !isEditorEmail(email)) {
+      showToast('Sua sessão de editor expirou. Entre novamente para excluir.', true, 6000);
       return;
     }
 
-    const password = prompt(`Excluir PO ${order.po_number}\n\nDigite sua senha de acesso ao PO Control para continuar:`);
-    if (password === null) return;
-    if (!password) {
-      showToast('A senha é obrigatória para excluir uma PO.', true, 5000);
-      return;
-    }
-
-    showToast('Verificando senha...', false, 1800);
-    const { error: authError } = await db.auth.signInWithPassword({ email, password });
-    if (authError) {
-      showToast('Senha incorreta. A PO não foi excluída.', true, 6000);
-      return;
-    }
-
-    if (!confirm(`Senha confirmada. Excluir definitivamente a PO ${order.po_number}?`)) {
+    const confirmed = confirm(
+      `Excluir definitivamente a PO ${order.po_number}?\n\nEsta ação não pode ser desfeita.`
+    );
+    if (!confirmed) {
       showToast('Exclusão cancelada.');
       return;
     }
 
-    // A exclusão usa uma função protegida no Supabase. Isso evita que uma
-    // policy antiga de DELETE impeça editores autorizados de excluir a PO.
+    showToast('Excluindo PO...', false, 2500);
+
+    // A própria RPC do Supabase valida a sessão e o e-mail do editor.
+    // Não fazemos um segundo signInWithPassword, porque ele pode travar a
+    // interface e é redundante para uma sessão já autenticada.
     const { data: deleted, error } = await db.rpc('delete_purchase_order', { p_id: id });
 
     if (error) {
-      const missingRpc = /delete_purchase_order|schema cache|function/i.test(String(error.message || ''));
+      const msg = String(error.message || error);
+      const missingRpc = /delete_purchase_order|schema cache|function/i.test(msg);
       showToast(
         missingRpc
-          ? 'A função de exclusão ainda não existe no Supabase. Rode o arquivo migration_v5_9_acoes.sql no SQL Editor.'
-          : `Erro ao excluir a PO: ${error.message}`,
+          ? 'A função de exclusão ainda não existe no Supabase. Rode migration_v5_9_acoes.sql no SQL Editor.'
+          : `Erro ao excluir a PO: ${msg}`,
         true,
         9000
       );
@@ -261,6 +254,9 @@
       return;
     }
 
+    // Atualiza a tela imediatamente e depois confirma com o banco.
+    orders = orders.filter((o) => o.id !== id);
+    render();
     showToast(`PO ${order.po_number} excluída.`);
     await loadOrders(true);
   }
