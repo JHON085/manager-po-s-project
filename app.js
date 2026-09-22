@@ -11,10 +11,11 @@
   const authPassword = $('authPassword');
   const authMessage = $('authMessage');
   const loginBtn = $('loginBtn');
-  const signupBtn = $('signupBtn');
+  const viewerBtn = $('viewerBtn');
   const logoutBtn = $('logoutBtn');
   const userEmail = $('userEmail');
   const syncPill = $('syncPill');
+  const rolePill = $('rolePill');
 
   const newPoBtn = $('newPoBtn');
   const importExcelBtn = $('importExcelBtn');
@@ -36,7 +37,6 @@
   const responsible = $('responsible');
   const orderDate = $('orderDate');
   const estimatedReadyDate = $('estimatedReadyDate');
-  const actualReadyDate = $('actualReadyDate');
   const poStatus = $('poStatus');
   const notes = $('notes');
 
@@ -55,17 +55,72 @@
   const attentionList = $('attentionList');
   const searchInput = $('searchInput');
   const statusFilter = $('statusFilter');
-  const followUpFilter = $('followUpFilter');
+  const situationFilter = $('situationFilter');
+  const originFollowUpFilter = $('originFollowUpFilter');
+  const orderDateSort = $('orderDateSort');
+  const metricTotal = $('metricTotal');
   const metricActive = $('metricActive');
   const metricOnTime = $('metricOnTime');
   const metricNear = $('metricNear');
   const metricLate = $('metricLate');
-  const metricWaiting = $('metricWaiting');
+  const metricOriginWaiting = $('metricOriginWaiting');
+  const metricDone = $('metricDone');
+  const recentOrdersList = $('recentOrdersList');
+  const oldestOrdersList = $('oldestOrdersList');
   const toast = $('toast');
+
+
+  const poView = $('poView');
+  const quotesView = $('quotesView');
+  const modeTabs = [...document.querySelectorAll('.mode-tab')];
+  const quoteNavBadge = $('quoteNavBadge');
+  const quoteSetup = $('quoteSetup');
+  const newQuoteBtn = $('newQuoteBtn');
+  const refreshQuotesBtn = $('refreshQuotesBtn');
+  const quoteModal = $('quoteModal');
+  const closeQuoteModalBtn = $('closeQuoteModalBtn');
+  const cancelQuoteBtn = $('cancelQuoteBtn');
+  const quoteForm = $('quoteForm');
+  const quoteModalTitle = $('quoteModalTitle');
+  const quoteFormError = $('quoteFormError');
+  const saveQuoteBtn = $('saveQuoteBtn');
+  const quoteId = $('quoteId');
+  const quoteReference = $('quoteReference');
+  const quoteSupplier = $('quoteSupplier');
+  const quoteClient = $('quoteClient');
+  const quoteSentAt = $('quoteSentAt');
+  const quoteTargetHours = $('quoteTargetHours');
+  const quoteResponseAt = $('quoteResponseAt');
+  const quoteOwner = $('quoteOwner');
+  const quoteNotes = $('quoteNotes');
+  const qWaiting = $('qWaiting');
+  const qOnTime = $('qOnTime');
+  const qAttention = $('qAttention');
+  const qLate = $('qLate');
+  const qAverage = $('qAverage');
+  const quoteAttentionList = $('quoteAttentionList');
+  const quoteSearch = $('quoteSearch');
+  const quoteStatusFilter = $('quoteStatusFilter');
+  const quoteRows = $('quoteRows');
+
+  const EDITOR_EMAILS = new Set([
+    'joao@zpmcbrazil.com',
+    'moreira@zpmcbrazil.com',
+    'leandro@zpmcbrazil.com'
+  ]);
 
   let db = null;
   let currentUser = null;
+  let accessMode = 'signed_out'; // signed_out | editor | viewer
   let orders = [];
+  let refreshTimer = null;
+  let elapsedRenderTimer = null;
+  let realtimeChannel = null;
+  let loadingOrders = false;
+  let quotes = [];
+  let loadingQuotes = false;
+  let quotesTableAvailable = true;
+  let activeMode = 'pos';
 
   function showMessage(el, text, type = 'error') {
     el.textContent = text;
@@ -85,6 +140,40 @@
     toast.textContent = text;
     toast.className = error ? 'toast error' : 'toast';
     setTimeout(() => { toast.className = 'toast hidden'; }, duration);
+  }
+
+  function normalizedEmail(email) {
+    return String(email || '').trim().toLowerCase();
+  }
+
+  function isEditorEmail(email) {
+    return EDITOR_EMAILS.has(normalizedEmail(email));
+  }
+
+  function canRead() {
+    return accessMode === 'editor' || accessMode === 'viewer';
+  }
+
+  function canEdit() {
+    return accessMode === 'editor' && currentUser && isEditorEmail(currentUser.email);
+  }
+
+  function requireEditor(message = 'Modo espectador: esta ação é somente para editores.') {
+    if (canEdit()) return true;
+    showToast(message, true, 5000);
+    return false;
+  }
+
+  function applyPermissionUI() {
+    const editor = canEdit();
+    document.querySelectorAll('[data-editor-only]').forEach((el) => {
+      el.classList.toggle('hidden', !editor);
+    });
+    if (rolePill) {
+      rolePill.textContent = editor ? 'Editor' : (accessMode === 'viewer' ? 'Espectador' : '');
+      rolePill.classList.toggle('hidden', !canRead());
+      rolePill.classList.toggle('viewer', accessMode === 'viewer');
+    }
   }
 
   function escapeHtml(value) {
@@ -119,48 +208,261 @@
     return `${d}/${m}/${y}`;
   }
 
-  function formatDateTime(value) {
-    if (!value) return '';
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit', month: '2-digit', year: '2-digit',
-      hour: '2-digit', minute: '2-digit'
-    }).format(d);
+
+  async function deleteOrderWithPassword(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+
+    const email = normalizedEmail(currentUser?.email);
+    if (!email) {
+      showToast('Sua sessão expirou. Entre novamente antes de excluir.', true, 6000);
+      return;
+    }
+
+    const password = prompt(`Excluir PO ${order.po_number}\n\nDigite sua senha de acesso ao PO Control para continuar:`);
+    if (password === null) return;
+    if (!password) {
+      showToast('A senha é obrigatória para excluir uma PO.', true, 5000);
+      return;
+    }
+
+    showToast('Verificando senha...', false, 1800);
+    const { error: authError } = await db.auth.signInWithPassword({ email, password });
+    if (authError) {
+      showToast('Senha incorreta. A PO não foi excluída.', true, 6000);
+      return;
+    }
+
+    if (!confirm(`Senha confirmada. Excluir definitivamente a PO ${order.po_number}?`)) {
+      showToast('Exclusão cancelada.');
+      return;
+    }
+
+    const { error } = await db
+      .from('purchase_orders')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao excluir a PO: ${error.message}`, true, 7000);
+      return;
+    }
+
+    showToast(`PO ${order.po_number} excluída.`);
+    await loadOrders(true);
   }
 
-  function getOriginFollowUp(order) {
-    if (order.origin_response_received) {
-      return { key: 'replied', label: 'Resposta recebida', cls: 'ok', detail: formatDateTime(order.origin_response_received_at) };
+  function formatDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+
+  function formatDateOnly(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  function parsePtBrNumber(value) {
+    const raw = String(value ?? '').trim().replace(/\s/g, '');
+    if (!raw) return null;
+    let normalized = raw;
+    if (normalized.includes(',')) {
+      normalized = normalized.replace(/\./g, '').replace(',', '.');
+    } else if (/^-?\d{1,3}(\.\d{3})+$/.test(normalized)) {
+      // Ex.: 3.000 ou 12.500.000 (milhar no padrão brasileiro).
+      normalized = normalized.replace(/\./g, '');
+    } else {
+      const dots = (normalized.match(/\./g) || []).length;
+      if (dots > 1) normalized = normalized.replace(/\./g, '');
     }
-    if (order.origin_follow_up_sent) {
-      let detail = '';
-      if (order.origin_follow_up_sent_at) {
-        const sent = new Date(order.origin_follow_up_sent_at);
-        const now = new Date();
-        const days = Math.max(0, Math.floor((now - sent) / 86400000));
-        detail = days === 0 ? 'Cobrado hoje' : `Aguardando há ${days} dia${days === 1 ? '' : 's'}`;
-      } else {
-        detail = 'Data da cobrança não registrada';
+    normalized = normalized.replace(/[^0-9.-]/g, '');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatPtBrNumber(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const n = typeof value === 'number' ? value : parsePtBrNumber(value);
+    if (!Number.isFinite(n)) return '';
+    return new Intl.NumberFormat('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(n);
+  }
+
+  function formatElapsedSeconds(seconds) {
+    let totalMinutes = Math.max(0, Math.floor(Number(seconds || 0) / 60));
+    const days = Math.floor(totalMinutes / 1440);
+    totalMinutes %= 1440;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    parts.push(`${minutes}min`);
+    return parts.join(' ');
+  }
+
+  function supplierElapsedSeconds(order, endValue = null) {
+    if (!order?.supplier_sent_at) return 0;
+
+    // Versões antigas não possuíam os campos de pausa/retomada.
+    const accumulated = Math.max(0, Number(order.supplier_wait_seconds || 0));
+    const resumedAt = order.supplier_wait_resumed_at;
+
+    if (order.supplier_confirmed_at) {
+      if (accumulated > 0) return accumulated;
+      const start = new Date(order.supplier_sent_at);
+      const end = new Date(order.supplier_confirmed_at);
+      return Math.max(0, Math.floor((end - start) / 1000));
+    }
+
+    const runningFrom = new Date(resumedAt || order.supplier_sent_at);
+    const end = endValue ? new Date(endValue) : new Date();
+    if (Number.isNaN(runningFrom.getTime()) || Number.isNaN(end.getTime())) return accumulated;
+    return accumulated + Math.max(0, Math.floor((end - runningFrom) / 1000));
+  }
+
+  function formatElapsed(startValue, endValue = null) {
+    if (!startValue) return null;
+    const start = new Date(startValue);
+    const end = endValue ? new Date(endValue) : new Date();
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    let totalMinutes = Math.max(0, Math.floor((end - start) / 60000));
+    const days = Math.floor(totalMinutes / 1440);
+    totalMinutes %= 1440;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    parts.push(`${minutes}min`);
+    return parts.join(' ');
+  }
+
+  function supplierWaitHtml(order) {
+    const status = normalizeSystemStatus(order.status);
+    const started = order.supplier_sent_at;
+    const confirmed = order.supplier_confirmed_at;
+
+    if (!started) {
+      if (status === 'Aguardando resposta do fornecedor') {
+        return '<span class="supplier-timer timer-not-started">Contagem não iniciada</span>';
       }
-      return { key: 'waiting', label: 'Aguardando resposta', cls: 'warn', detail };
+      return '<span class="supplier-timer timer-empty">—</span>';
     }
-    return { key: 'not_sent', label: 'Não cobrado', cls: 'neutral', detail: '' };
+
+    const elapsed = formatElapsedSeconds(supplierElapsedSeconds(order));
+
+    if (confirmed) {
+      return `<span class="supplier-timer timer-done">Confirmou em ${escapeHtml(elapsed)}</span><small class="supplier-timer-meta">Enviada ${escapeHtml(formatDateTime(started))} • Confirmada ${escapeHtml(formatDateTime(confirmed))}</small>`;
+    }
+
+    if (status !== 'Aguardando resposta do fornecedor') {
+      return `<span class="supplier-timer timer-empty">—</span><small class="supplier-timer-meta">PO enviada ${escapeHtml(formatDateTime(started))}</small>`;
+    }
+
+    return `<span class="supplier-timer timer-running">Aguardando há ${escapeHtml(elapsed)}</span><small class="supplier-timer-meta">Enviada ${escapeHtml(formatDateTime(started))}</small>`;
+  }
+
+  function originFollowUpState(order) {
+    const sent = Boolean(order?.origin_followup_sent);
+    const answeredAt = order?.origin_followup_answered_at || null;
+    if (!sent) return 'not_charged';
+    if (!answeredAt) return 'waiting';
+    return 'answered';
+  }
+
+  function originFollowUpHtml(order) {
+    const state = originFollowUpState(order);
+    const sentAt = order.origin_followup_sent_at || null;
+    const answeredAt = order.origin_followup_answered_at || null;
+    const editor = canEdit();
+
+    if (state === 'not_charged') {
+      return `
+        <div class="origin-followup-box">
+          <label class="origin-followup-check">
+            <input type="checkbox" data-origin-followup-toggle data-id="${order.id}" ${editor ? '' : 'disabled'} />
+            <span>Cobrado</span>
+          </label>
+          <small class="origin-followup-meta">Ainda não cobrado</small>
+        </div>
+      `;
+    }
+
+    if (state === 'waiting') {
+      const elapsed = sentAt ? formatElapsed(sentAt) : null;
+      return `
+        <div class="origin-followup-box">
+          <label class="origin-followup-check checked">
+            <input type="checkbox" data-origin-followup-toggle data-id="${order.id}" checked ${editor ? '' : 'disabled'} />
+            <span>Cobrado</span>
+          </label>
+          <span class="origin-followup-state waiting">Aguardando resposta</span>
+          ${sentAt ? `<small class="origin-followup-meta">Cobrado em ${escapeHtml(formatDateTime(sentAt))}${elapsed ? ` • há ${escapeHtml(elapsed)}` : ''}</small>` : '<small class="origin-followup-meta">Cobrança registrada pela FOLLOW UP</small>'}
+          ${editor ? `<button type="button" class="origin-followup-action" data-action="origin-response" data-id="${order.id}">Resposta recebida</button>` : ''}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="origin-followup-box">
+        <label class="origin-followup-check checked">
+          <input type="checkbox" data-origin-followup-toggle data-id="${order.id}" checked ${editor ? '' : 'disabled'} />
+          <span>Cobrado</span>
+        </label>
+        <span class="origin-followup-state answered">Resposta recebida</span>
+        <small class="origin-followup-meta">${answeredAt ? `Em ${escapeHtml(formatDateTime(answeredAt))}` : 'Resposta registrada'}</small>
+        ${editor ? `<button type="button" class="origin-followup-action" data-action="origin-recharge" data-id="${order.id}">Cobrar novamente</button>` : ''}
+      </div>
+    `;
+  }
+
+  function normalizeSystemStatus(status) {
+    const raw = String(status || '').trim();
+
+    // Compatibilidade com registros antigos, antes da troca de nome do status.
+    if (
+      raw === 'Aguardando resposta do fornecedor' ||
+      raw === 'Aguardando recebimento da PO pelo fornecedor'
+    ) {
+      return 'Aguardando resposta do fornecedor';
+    }
+
+    if (raw === 'Cancelado' || raw === 'Cancelada') return 'Cancelado';
+    if (['Concluído', 'Pronto', 'Embarcado'].includes(raw)) return 'Concluído';
+    return 'Em produção';
+  }
+
+  function statusDisplay(status) {
+    const normalized = normalizeSystemStatus(status);
+    return normalized === 'Cancelado' ? 'Cancelada' : normalized;
   }
 
   function getHealth(order) {
-    if (order.status === 'Cancelado') {
-      return { key: 'done', label: 'Cancelado', cls: 'neutral', days: null };
+    const status = normalizeSystemStatus(order.status);
+    if (status === 'Cancelado') {
+      return { key: 'done', label: 'Cancelada', cls: 'neutral', days: null };
     }
-    if (['Pronto', 'Embarcado', 'Concluído'].includes(order.status) || order.actual_ready_date) {
-      return { key: 'done', label: order.status === 'Concluído' ? 'Concluído' : 'Pronto', cls: 'neutral', days: null };
+    if (status === 'Concluído') {
+      return { key: 'done', label: 'Concluído', cls: 'neutral', days: null };
     }
     const days = daysFromToday(order.estimated_ready_date);
     if (days === null) return { key: 'unknown', label: 'Sem data', cls: 'neutral', days: null };
     if (days < 0) return { key: 'late', label: `Atrasado ${Math.abs(days)} dia${Math.abs(days) === 1 ? '' : 's'}`, cls: 'danger', days };
     if (days === 0) return { key: 'near', label: 'Vence hoje', cls: 'warn', days };
-    if (days <= 7) return { key: 'near', label: `${days} dia${days === 1 ? '' : 's'}`, cls: 'warn', days };
-    return { key: 'ontime', label: 'No prazo', cls: 'ok', days };
+    if (days <= 4) return { key: 'near', label: `Próximo • ${days} dia${days === 1 ? '' : 's'}`, cls: 'warn', days };
+    return { key: 'ontime', label: `No prazo • ${days} dias`, cls: 'ok', days };
   }
 
   function valueOrEmpty(value) {
@@ -168,11 +470,12 @@
   }
 
   function openModal(order = null) {
+    if (!requireEditor()) return;
     poForm.reset();
     hideMessage(formError);
     poId.value = '';
     orderDate.value = todayISO();
-    poStatus.value = 'Aguardando produção';
+    poStatus.value = 'Aguardando resposta do fornecedor';
     modalTitle.textContent = 'Novo PO';
 
     if (order) {
@@ -186,15 +489,14 @@
       responsible.value = order.responsible || '';
       orderDate.value = order.order_date || '';
       estimatedReadyDate.value = order.estimated_ready_date || '';
-      actualReadyDate.value = order.actual_ready_date || '';
-      poStatus.value = order.status || 'Aguardando produção';
+      poStatus.value = normalizeSystemStatus(order.status);
       notes.value = order.notes || '';
 
       currency.value = order.currency || '';
       transportation.value = order.transportation || '';
-      amountPo.value = valueOrEmpty(order.amount_po);
+      amountPo.value = formatPtBrNumber(order.amount_po);
       supplierQuotationNo.value = order.supplier_quotation_no || '';
-      supplierPrice.value = valueOrEmpty(order.supplier_price);
+      supplierPrice.value = formatPtBrNumber(order.supplier_price);
       quotationNo.value = order.quotation_no || '';
       workOrder.value = order.work_order || '';
       lspConsulted.value = order.lsp_consulted || '';
@@ -214,50 +516,164 @@
     savePoBtn.textContent = 'Salvar PO';
   }
 
-  function setAuthView(user) {
-    currentUser = user || null;
-    if (currentUser) {
-      authPage.classList.add('hidden');
-      appPage.classList.remove('hidden');
-      userEmail.textContent = currentUser.email || '';
-      loadOrders();
-    } else {
-      appPage.classList.add('hidden');
-      authPage.classList.remove('hidden');
-      orders = [];
-      render();
+
+
+  function showMode(mode) {
+    activeMode = mode === 'quotes' ? 'quotes' : 'pos';
+    poView.classList.toggle('hidden', activeMode !== 'pos');
+    quotesView.classList.toggle('hidden', activeMode !== 'quotes');
+    modeTabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === activeMode));
+    if (activeMode === 'quotes') loadQuotes(true);
+  }
+
+  async function stopRealtime() {
+    if (realtimeChannel && db) {
+      try { await db.removeChannel(realtimeChannel); } catch (_) {}
+      realtimeChannel = null;
     }
   }
 
-  async function loadOrders() {
-    if (!currentUser) return;
-    setSync('Sincronizando...');
-    const { data, error } = await db
-      .from('purchase_orders')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      setSync('Erro no banco');
-      showToast(`Erro ao carregar POs: ${error.message}`, true, 6000);
-      orders = [];
-      render();
-      return;
+  function startRealtime() {
+    if (!db || !canRead()) return;
+    if (realtimeChannel) {
+      try { db.removeChannel(realtimeChannel); } catch (_) {}
+      realtimeChannel = null;
     }
 
-    orders = data || [];
-    setSync('Sincronizado');
-    render();
+    realtimeChannel = db
+      .channel('po-control-shared-live-v5')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, () => loadOrders(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'china_quotes' }, () => loadQuotes(true))
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setSync('Ao vivo');
+      });
+  }
+
+  function setAccessView(user = null, mode = 'signed_out') {
+    currentUser = user || null;
+    accessMode = mode;
+
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+    if (elapsedRenderTimer) {
+      clearInterval(elapsedRenderTimer);
+      elapsedRenderTimer = null;
+    }
+    stopRealtime();
+
+    if (canRead()) {
+      authPage.classList.add('hidden');
+      appPage.classList.remove('hidden');
+      userEmail.textContent = canEdit() ? (currentUser.email || '') : 'Modo espectador';
+      applyPermissionUI();
+      loadOrders();
+      loadQuotes(true);
+      startRealtime();
+
+      // Fallback caso o Realtime esteja temporariamente indisponível.
+      refreshTimer = setInterval(() => {
+        if (canRead() && !document.hidden) { loadOrders(true); loadQuotes(true); }
+      }, 60000);
+
+      // Atualiza apenas os contadores de espera sem precisar consultar o banco.
+      elapsedRenderTimer = setInterval(() => {
+        if (canRead() && !document.hidden && activeMode === 'pos') renderTable();
+      }, 30000);
+    } else {
+      if (accessMode === 'signed_out') sessionStorage.removeItem('po_access_mode');
+      appPage.classList.add('hidden');
+      authPage.classList.remove('hidden');
+      userEmail.textContent = '';
+      applyPermissionUI();
+      orders = [];
+      quotes = [];
+      render();
+      renderQuotes();
+    }
+  }
+
+  async function loadOrders(quiet = false) {
+    if (!canRead() || loadingOrders) return;
+    loadingOrders = true;
+    if (!quiet) setSync('Sincronizando...');
+    try {
+      const { data, error } = await db
+        .from('purchase_orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        setSync('Erro no banco');
+        if (!quiet) showToast(`Erro ao carregar POs: ${error.message}`, true, 6000);
+        return;
+      }
+
+      orders = (data || []).map((row) => ({ ...row, status: normalizeSystemStatus(row.status) }));
+      const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setSync(`Sincronizado • ${time}`);
+      render();
+    } finally {
+      loadingOrders = false;
+    }
   }
 
   function renderMetrics() {
-    const active = orders.filter((o) => !['Concluído', 'Cancelado'].includes(o.status));
+    const active = orders.filter((o) => ['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)));
     const health = active.map(getHealth);
+    if (metricTotal) metricTotal.textContent = orders.length;
     metricActive.textContent = active.length;
     metricOnTime.textContent = health.filter((h) => h.key === 'ontime').length;
     metricNear.textContent = health.filter((h) => h.key === 'near').length;
     metricLate.textContent = health.filter((h) => h.key === 'late').length;
-    metricWaiting.textContent = active.filter((o) => getOriginFollowUp(o).key === 'waiting').length;
+    if (metricOriginWaiting) metricOriginWaiting.textContent = active.filter((o) => originFollowUpState(o) === 'waiting').length;
+    if (metricDone) metricDone.textContent = orders.filter((o) => normalizeSystemStatus(o.status) === 'Concluído').length;
+  }
+
+  function renderOrderAgeSummary() {
+    if (!recentOrdersList || !oldestOrdersList) return;
+
+    const dated = orders
+      .filter((o) => dateFromISO(o.order_date))
+      .slice()
+      .sort((a, b) => dateFromISO(a.order_date) - dateFromISO(b.order_date));
+
+    if (!dated.length) {
+      const empty = '<div class="empty compact-empty">Sem POs com Data do pedido.</div>';
+      recentOrdersList.innerHTML = empty;
+      oldestOrdersList.innerHTML = empty;
+      return;
+    }
+
+    const uniqueByPo = (items) => {
+      const seen = new Set();
+      const result = [];
+      for (const order of items) {
+        const key = String(order.po_number || order.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(order);
+        if (result.length === 3) break;
+      }
+      return result;
+    };
+
+    const oldest = uniqueByPo(dated);
+    const recent = uniqueByPo(dated.slice().reverse());
+
+    const itemHtml = (order) => `
+      <button type="button" class="po-age-item" data-history-id="${order.id}" title="Localizar esta PO na tabela">
+        <div class="po-age-main">
+          <strong>${escapeHtml(order.po_number || 'Sem PO')}</strong>
+          <span>${escapeHtml(order.supplier || 'Sem fornecedor')}</span>
+        </div>
+        <time>${escapeHtml(formatDate(order.order_date))}</time>
+      </button>
+    `;
+
+    recentOrdersList.innerHTML = recent.map(itemHtml).join('');
+    oldestOrdersList.innerHTML = oldest.map(itemHtml).join('');
   }
 
   function renderAttention() {
@@ -273,67 +689,117 @@
     }
 
     attentionList.innerHTML = list.map(({ order, health }) => `
-      <div class="alert-row">
+      <button type="button" class="alert-row attention-jump" data-attention-id="${order.id}" title="Localizar este PO na lista">
         <div>
           <strong>${escapeHtml(order.po_number)} — ${escapeHtml(order.supplier)}</strong>
           <small>Estimativa: ${formatDate(order.estimated_ready_date)} • ${escapeHtml(order.client || 'Sem cliente')}</small>
-          ${getOriginFollowUp(order).key === 'waiting' ? `<small class="followup-note">📨 ${escapeHtml(getOriginFollowUp(order).detail)}</small>` : ''}
         </div>
-        <div class="alert-badges">
-          <span class="badge ${health.cls}">${health.label}</span>
-          ${getOriginFollowUp(order).key === 'waiting' ? '<span class="badge warn">Aguardando origem</span>' : ''}
-        </div>
-      </div>
+        <span class="badge ${health.cls}">${health.label}</span>
+      </button>
     `).join('');
+  }
+
+  function focusOrderInTable(id) {
+    if (!id) return;
+    searchInput.value = '';
+    statusFilter.value = '';
+    if (situationFilter) situationFilter.value = '';
+    renderTable();
+
+    requestAnimationFrame(() => {
+      const row = ordersBody.querySelector(`tr[data-po-id="${id}"]`);
+      if (!row) {
+        showToast('Não consegui localizar este PO na lista.', true);
+        return;
+      }
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('row-focus');
+      setTimeout(() => row.classList.remove('row-focus'), 2400);
+    });
   }
 
   function renderTable() {
     const search = searchInput.value.trim().toLowerCase();
     const status = statusFilter.value;
-    const followUp = followUpFilter.value;
+    const situation = situationFilter?.value || '';
+    const originFollowUp = originFollowUpFilter?.value || '';
     const filtered = orders.filter((o) => {
       const text = [
         o.po_number, o.supplier, o.client, o.origin, o.responsible,
         o.quotation_no, o.work_order, o.supplier_quotation_no, o.follow_up_status
       ].filter(Boolean).join(' ').toLowerCase();
-      const followState = getOriginFollowUp(o).key;
-      return (!search || text.includes(search)) && (!status || o.status === status) && (!followUp || followState === followUp);
+      const h = getHealth(o);
+      const situationOk = !situation ||
+        (situation === 'today' && h.key === 'near' && h.days === 0) ||
+        (situation === 'near' && h.key === 'near' && h.days > 0) ||
+        (situation === 'done' && h.key === 'done') ||
+        h.key === situation;
+      const originState = originFollowUpState(o);
+      const originOk = !originFollowUp || originState === originFollowUp;
+      return (!search || text.includes(search)) && (!status || normalizeSystemStatus(o.status) === status) && situationOk && originOk;
     });
 
+    const dateSort = orderDateSort?.value || '';
+    if (dateSort === 'recent' || dateSort === 'oldest') {
+      filtered.sort((a, b) => {
+        const ad = dateFromISO(a.order_date);
+        const bd = dateFromISO(b.order_date);
+
+        // POs sem Data do pedido ficam no final em ambas as ordenações.
+        if (!ad && !bd) return String(a.po_number || '').localeCompare(String(b.po_number || ''));
+        if (!ad) return 1;
+        if (!bd) return -1;
+
+        const diff = ad - bd;
+        if (diff) return dateSort === 'recent' ? -diff : diff;
+        return String(a.po_number || '').localeCompare(String(b.po_number || ''));
+      });
+    } else {
+      const priority = { late: 0, near: 1, ontime: 2, unknown: 3, done: 4 };
+      filtered.sort((a, b) => {
+        const ah = getHealth(a), bh = getHealth(b);
+        const p = (priority[ah.key] ?? 9) - (priority[bh.key] ?? 9);
+        if (p) return p;
+        if (ah.key === 'late') return (ah.days ?? 0) - (bh.days ?? 0);
+        if (ah.key === 'near' || ah.key === 'ontime') return (ah.days ?? 9999) - (bh.days ?? 9999);
+        return String(a.po_number || '').localeCompare(String(b.po_number || ''));
+      });
+    }
+
     if (!filtered.length) {
-      ordersBody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum PO encontrado.</td></tr>';
+      ordersBody.innerHTML = '<tr><td colspan="10" class="empty">Nenhum PO encontrado.</td></tr>';
       return;
     }
 
     ordersBody.innerHTML = filtered.map((o) => {
       const health = getHealth(o);
-      const follow = getOriginFollowUp(o);
       return `
-        <tr>
-          <td><button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button></td>
+        <tr class="row-${health.key}" data-po-id="${o.id}">
+          <td>${canEdit() ? `<button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button>` : `<span class="po-number-readonly">${escapeHtml(o.po_number)}</span>`}</td>
           <td>${escapeHtml(o.supplier)}</td>
           <td>${escapeHtml(o.client || '—')}</td>
           <td>${formatDate(o.estimated_ready_date)}</td>
-          <td>${escapeHtml(o.status)}</td>
-          <td>
-            <div class="followup-cell">
-              <label class="followup-check" title="Marque quando a cobrança for enviada para a origem">
-                <input type="checkbox" data-followup-toggle data-id="${o.id}" ${o.origin_follow_up_sent ? 'checked' : ''}>
-                <span>Cobrado</span>
-              </label>
-              <span class="badge ${follow.cls}">${follow.label}</span>
-              ${follow.detail ? `<small>${escapeHtml(follow.detail)}</small>` : ''}
-              ${follow.key === 'waiting' ? `<button class="mini-link" data-action="response" data-id="${o.id}">Resposta recebida</button>` : ''}
-              ${follow.key === 'replied' ? `<button class="mini-link" data-action="followup-again" data-id="${o.id}">Cobrar novamente</button>` : ''}
-            </div>
-          </td>
+          <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
+          <td class="origin-followup-cell">${originFollowUpHtml(o)}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
           <td>
+            <span class="badge ${normalizeSystemStatus(o.status) === 'Concluído' ? 'ok' : normalizeSystemStatus(o.status) === 'Cancelado' ? 'neutral' : normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' ? 'status-waiting' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span>
+            ${normalizeSystemStatus(o.status) === 'Concluído' && o.completed_at ? `<small class="completion-date">Concluído em ${escapeHtml(formatDateOnly(o.completed_at))}</small>` : ''}
+          </td>
+          <td>${supplierWaitHtml(o)}</td>
+          <td>${canEdit() ? `
             <div class="actions">
               <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
-              ${!['Pronto','Embarcado','Concluído','Cancelado'].includes(o.status) ? `<button class="btn btn-secondary btn-small" data-action="ready" data-id="${o.id}">Marcar pronto</button>` : ''}
-              <button class="btn btn-danger btn-small" data-action="delete" data-id="${o.id}">Excluir</button>
-            </div>
+              ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button class="btn btn-primary btn-small" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
+              ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button class="btn btn-primary btn-small" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
+              ${['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
+              <details class="po-row-menu">
+                <summary title="Mais opções" aria-label="Mais opções para a PO ${escapeHtml(o.po_number)}">•••</summary>
+                <div class="po-row-menu-popover">
+                  <button type="button" class="po-delete-option" data-action="delete-protected" data-id="${o.id}">Excluir PO</button>
+                </div>
+              </details>
+            </div>` : '<span class="readonly-text">Somente leitura</span>'}
           </td>
         </tr>
       `;
@@ -342,63 +808,53 @@
 
   function render() {
     renderMetrics();
+    renderOrderAgeSummary();
     renderAttention();
     renderTable();
   }
 
   async function handleLogin(event) {
     event.preventDefault();
+    sessionStorage.removeItem('po_access_mode');
     hideMessage(authMessage);
-    if (!authEmail.value || !authPassword.value) {
+    const email = normalizedEmail(authEmail.value);
+    if (!email || !authPassword.value) {
       showMessage(authMessage, 'Preencha e-mail e senha.');
+      return;
+    }
+    if (!isEditorEmail(email)) {
+      showMessage(authMessage, 'Este e-mail não possui acesso de edição. Use o Modo espectador.');
       return;
     }
 
     loginBtn.disabled = true;
     loginBtn.textContent = 'Entrando...';
-    const { error } = await db.auth.signInWithPassword({
-      email: authEmail.value.trim(),
+    const { data, error } = await db.auth.signInWithPassword({
+      email,
       password: authPassword.value
     });
     loginBtn.disabled = false;
     loginBtn.textContent = 'Entrar';
 
-    if (error) showMessage(authMessage, error.message);
-  }
-
-  async function handleSignup() {
-    hideMessage(authMessage);
-    if (!authEmail.value || !authPassword.value) {
-      showMessage(authMessage, 'Preencha e-mail e senha.');
-      return;
-    }
-    if (authPassword.value.length < 6) {
-      showMessage(authMessage, 'A senha precisa ter pelo menos 6 caracteres.');
-      return;
-    }
-
-    signupBtn.disabled = true;
-    signupBtn.textContent = 'Criando...';
-    const { data, error } = await db.auth.signUp({
-      email: authEmail.value.trim(),
-      password: authPassword.value
-    });
-    signupBtn.disabled = false;
-    signupBtn.textContent = 'Criar conta';
-
     if (error) {
       showMessage(authMessage, error.message);
       return;
     }
+    if (data?.user && !isEditorEmail(data.user.email)) {
+      await db.auth.signOut();
+      showMessage(authMessage, 'Usuário sem permissão de edição.');
+    }
+  }
 
-    if (data.session) showMessage(authMessage, 'Conta criada e login realizado.', 'success');
-    else showMessage(authMessage, 'Conta criada. Confirme o e-mail e depois faça login.', 'success');
+  async function enterViewerMode() {
+    hideMessage(authMessage);
+    sessionStorage.setItem('po_access_mode', 'viewer');
+    try { await db.auth.signOut(); } catch (_) {}
+    setAccessView(null, 'viewer');
   }
 
   function optionalNumber(input) {
-    if (input.value === '') return null;
-    const n = Number(input.value);
-    return Number.isFinite(n) ? n : null;
+    return parsePtBrNumber(input.value);
   }
 
   async function handleSavePO(event) {
@@ -406,21 +862,25 @@
     hideMessage(formError);
 
     const isEditing = Boolean(poId.value);
-    if (!poNumber.value.trim() || !supplier.value.trim() || (!isEditing && !estimatedReadyDate.value)) {
-      showMessage(formError, 'Preencha Número do PO, Fornecedor e Estimativa de prontidão.');
+    if (!poNumber.value.trim() || !supplier.value.trim()) {
+      showMessage(formError, 'Preencha Número do PO e Fornecedor.');
       return;
     }
 
-    if (!currentUser) {
-      showMessage(formError, 'Sua sessão expirou. Faça login novamente.');
+    if (!requireEditor()) {
+      showMessage(formError, 'Modo espectador não pode salvar alterações.');
       return;
     }
+
+    const existing = isEditing ? orders.find((o) => o.id === poId.value) : null;
+    const oldStatus = existing ? normalizeSystemStatus(existing.status) : null;
+    const newStatus = normalizeSystemStatus(poStatus.value);
+    const now = new Date().toISOString();
 
     savePoBtn.disabled = true;
     savePoBtn.textContent = 'Salvando...';
 
     const payload = {
-      user_id: currentUser.id,
       po_number: poNumber.value.trim(),
       supplier: supplier.value.trim(),
       client: client.value.trim() || null,
@@ -429,8 +889,7 @@
       responsible: responsible.value.trim() || null,
       order_date: orderDate.value || null,
       estimated_ready_date: estimatedReadyDate.value || null,
-      actual_ready_date: actualReadyDate.value || null,
-      status: poStatus.value,
+      status: newStatus,
       notes: notes.value.trim() || null,
       currency: currency.value.trim() || null,
       transportation: transportation.value.trim() || null,
@@ -444,6 +903,31 @@
       hidden_status: hiddenStatus.value.trim() || null
     };
 
+    // Data de conclusão: nasce ao concluir, some ao reabrir e recebe uma nova data
+    // somente quando o processo for concluído novamente.
+    if (newStatus === 'Concluído') {
+      payload.completed_at = oldStatus === 'Concluído' && existing?.completed_at
+        ? existing.completed_at
+        : now;
+    } else {
+      payload.completed_at = null;
+    }
+
+    // Se a confirmação do fornecedor foi marcada por engano e o usuário voltar
+    // para "Aguardando resposta", a contagem retoma exatamente do ponto em que parou.
+    // supplier_sent_at continua sendo a data/hora ORIGINAL do envio.
+    if (
+      existing &&
+      newStatus === 'Aguardando resposta do fornecedor' &&
+      oldStatus !== 'Aguardando resposta do fornecedor' &&
+      existing.supplier_sent_at &&
+      existing.supplier_confirmed_at
+    ) {
+      payload.supplier_wait_seconds = supplierElapsedSeconds(existing, existing.supplier_confirmed_at);
+      payload.supplier_wait_resumed_at = now;
+      payload.supplier_confirmed_at = null;
+    }
+
     let result;
     try {
       if (isEditing) {
@@ -451,13 +935,12 @@
           .from('purchase_orders')
           .update(payload)
           .eq('id', poId.value)
-          .eq('user_id', currentUser.id)
           .select()
           .single();
       } else {
         result = await db
           .from('purchase_orders')
-          .insert(payload)
+          .insert({ ...payload, user_id: currentUser.id })
           .select()
           .single();
       }
@@ -480,100 +963,162 @@
     await loadOrders();
   }
 
-  async function markReady(id) {
-    if (!currentUser) return;
+  async function markCompleted(id) {
+    if (!requireEditor()) return;
     const { error } = await db
       .from('purchase_orders')
-      .update({ actual_ready_date: todayISO(), status: 'Pronto' })
-      .eq('id', id)
-      .eq('user_id', currentUser.id);
+      .update({ completed_at: new Date().toISOString(), status: 'Concluído' })
+      .eq('id', id);
 
     if (error) {
       showToast(`Erro ao atualizar: ${error.message}`, true);
       return;
     }
-    showToast('PO marcado como pronto.');
+    showToast('PO concluído. Data da conclusão registrada.');
     await loadOrders();
   }
+
 
   async function setOriginFollowUp(id, checked) {
-    if (!currentUser) return;
+    if (!requireEditor()) return;
     const order = orders.find((o) => o.id === id);
     if (!order) return;
 
-    if (!checked && order.origin_follow_up_sent) {
-      const ok = confirm('Remover a marcação de cobrança deste PO?');
-      if (!ok) { renderTable(); return; }
+    if (!checked) {
+      const ok = confirm(`Desmarcar a cobrança da PO ${order.po_number}? Isso limpará o status de aguardando/resposta da origem.`);
+      if (!ok) {
+        renderTable();
+        return;
+      }
     }
 
-    const payload = checked ? {
-      origin_follow_up_sent: true,
-      origin_follow_up_sent_at: new Date().toISOString(),
-      origin_response_received: false,
-      origin_response_received_at: null,
-      origin_follow_up_count: Number(order.origin_follow_up_count || 0) + 1
-    } : {
-      origin_follow_up_sent: false,
-      origin_follow_up_sent_at: null,
-      origin_response_received: false,
-      origin_response_received_at: null
-    };
-
-    const { error } = await db.from('purchase_orders').update(payload).eq('id', id).eq('user_id', currentUser.id);
-    if (error) {
-      showToast(`Erro ao registrar cobrança: ${error.message}. Rode migration_cobranca_origem.sql no Supabase.`, true, 7000);
-      await loadOrders();
-      return;
-    }
-    showToast(checked ? 'Cobrança registrada. Agora está aguardando resposta da origem.' : 'Marcação de cobrança removida.');
-    await loadOrders();
-  }
-
-  async function markOriginResponse(id) {
-    if (!currentUser) return;
-    const { error } = await db.from('purchase_orders').update({
-      origin_follow_up_sent: true,
-      origin_response_received: true,
-      origin_response_received_at: new Date().toISOString()
-    }).eq('id', id).eq('user_id', currentUser.id);
-    if (error) { showToast(`Erro ao registrar resposta: ${error.message}`, true); return; }
-    showToast('Resposta da origem registrada.');
-    await loadOrders();
-  }
-
-  async function followUpAgain(id) {
-    if (!currentUser) return;
-    const order = orders.find((o) => o.id === id);
-    if (!order) return;
-    const { error } = await db.from('purchase_orders').update({
-      origin_follow_up_sent: true,
-      origin_follow_up_sent_at: new Date().toISOString(),
-      origin_response_received: false,
-      origin_response_received_at: null,
-      origin_follow_up_count: Number(order.origin_follow_up_count || 0) + 1
-    }).eq('id', id).eq('user_id', currentUser.id);
-    if (error) { showToast(`Erro ao registrar nova cobrança: ${error.message}`, true); return; }
-    showToast('Nova cobrança registrada. Aguardando resposta da origem.');
-    await loadOrders();
-  }
-
-  async function deleteOrder(id) {
-    const order = orders.find((o) => o.id === id);
-    if (!order || !currentUser) return;
-    if (!confirm(`Excluir o PO ${order.po_number}?`)) return;
+    const now = new Date().toISOString();
+    const patch = checked
+      ? {
+          origin_followup_sent: true,
+          origin_followup_sent_at: order.origin_followup_sent_at || now,
+          origin_followup_answered_at: null
+        }
+      : {
+          origin_followup_sent: false,
+          origin_followup_sent_at: null,
+          origin_followup_answered_at: null
+        };
 
     const { error } = await db
       .from('purchase_orders')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', currentUser.id);
+      .update(patch)
+      .eq('id', id);
 
     if (error) {
-      showToast(`Erro ao excluir: ${error.message}`, true);
+      showToast(`Erro ao atualizar cobrança da origem: ${error.message}`, true, 6500);
+      renderTable();
       return;
     }
-    showToast('PO excluído.');
-    await loadOrders();
+
+    showToast(checked ? 'Cobrança marcada. Agora está aguardando resposta da origem.' : 'Cobrança desmarcada.');
+    await loadOrders(true);
+  }
+
+  async function markOriginResponse(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    if (!order.origin_followup_sent) {
+      showToast('Marque primeiro que a origem já foi cobrada.', true, 5000);
+      return;
+    }
+
+    const { error } = await db
+      .from('purchase_orders')
+      .update({ origin_followup_answered_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao registrar resposta da origem: ${error.message}`, true, 6500);
+      return;
+    }
+
+    showToast('Resposta da origem registrada.');
+    await loadOrders(true);
+  }
+
+  async function restartOriginFollowUp(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+
+    const { error } = await db
+      .from('purchase_orders')
+      .update({
+        origin_followup_sent: true,
+        origin_followup_sent_at: new Date().toISOString(),
+        origin_followup_answered_at: null
+      })
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao registrar nova cobrança: ${error.message}`, true, 6500);
+      return;
+    }
+
+    showToast('Nova cobrança registrada. Aguardando resposta da origem.');
+    await loadOrders(true);
+  }
+
+  async function startSupplierWait(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    if (order.supplier_sent_at && !confirm(`A PO ${order.po_number} já possui uma data de envio. Reiniciar a contagem a partir de agora?`)) return;
+
+    const now = new Date().toISOString();
+    const { error } = await db
+      .from('purchase_orders')
+      .update({
+        status: 'Aguardando resposta do fornecedor',
+        supplier_sent_at: now,
+        supplier_confirmed_at: null,
+        supplier_wait_seconds: 0,
+        supplier_wait_resumed_at: now
+      })
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao iniciar contagem: ${error.message}`, true, 6000);
+      return;
+    }
+    showToast('PO enviada ao fornecedor. Contagem iniciada.');
+    await loadOrders(true);
+  }
+
+  async function confirmSupplierReceipt(id) {
+    if (!requireEditor()) return;
+    const order = orders.find((o) => o.id === id);
+    if (!order) return;
+    if (!order.supplier_sent_at) {
+      showToast('Inicie a contagem de envio antes de confirmar o recebimento.', true, 5000);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const elapsedSeconds = supplierElapsedSeconds(order, now);
+    const { error } = await db
+      .from('purchase_orders')
+      .update({
+        supplier_confirmed_at: now,
+        supplier_wait_seconds: elapsedSeconds,
+        supplier_wait_resumed_at: null,
+        status: 'Em produção'
+      })
+      .eq('id', id);
+
+    if (error) {
+      showToast(`Erro ao registrar confirmação: ${error.message}`, true, 6000);
+      return;
+    }
+    showToast(`Fornecedor confirmou. Tempo de resposta: ${formatElapsedSeconds(elapsedSeconds)}.`);
+    await loadOrders(true);
   }
 
   function cleanText(value) {
@@ -630,6 +1175,14 @@
     return key ? row[key] : null;
   }
 
+  function getFirstCell(row, headers) {
+    for (const header of headers) {
+      const value = getCell(row, header);
+      if (value !== null && value !== undefined && value !== '') return value;
+    }
+    return null;
+  }
+
   function parseIncoterm(value) {
     const raw = String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
     if (!raw) return null;
@@ -643,10 +1196,12 @@
     if (hidden.includes('cancelada') || hidden.includes('cancelado')) return 'Cancelado';
 
     const status = String(statusValue || '').trim().toLowerCase();
-    if (status === 'docs recebidos e enviado ao cliente') return 'Concluído';
-    if (status === 'pendência documental' || status === 'pendencia documental') return 'Pronto';
-    if (status.includes('produção') || status.includes('producao') || status.includes('cobrança') || status.includes('cobranca')) return 'Em produção';
-    return 'Aguardando produção';
+    if (
+      (status.includes('aguardando recebimento') && status.includes('fornecedor')) ||
+      (status.includes('aguardando resposta') && status.includes('fornecedor'))
+    ) return 'Aguardando resposta do fornecedor';
+    if (status === 'docs recebidos e enviado ao cliente' || status.includes('conclu') || status.includes('finaliz')) return 'Concluído';
+    return 'Em produção';
   }
 
   function hashText(text) {
@@ -673,22 +1228,20 @@
     const transportationRaw = cleanText(getCell(row, 'Transportation'));
     const followStatus = cleanText(getCell(row, 'Status'));
     const hidden = cleanText(getCell(row, 'Status oculto'));
-    const followStatusNormalized = String(followStatus || '').toLowerCase();
-    const importedAsCharged = followStatusNormalized.includes('cobrança realizada') || followStatusNormalized.includes('cobranca realizada');
+    const followStatusLower = String(followStatus || '').toLowerCase();
+    const originAlreadyCharged = (followStatusLower.includes('cobran') && followStatusLower.includes('sem retorno')) || followStatusLower.includes('cobrança realizada') || followStatusLower.includes('cobranca realizada');
 
-    const rawFingerprint = [sourceNo ?? '', purchaseOrder, supplierValue, supplierQuote || '', amount ?? ''].join('|');
-    const fingerprint = `followup:${sourceNo ?? 'x'}:${purchaseOrder}:${hashText(rawFingerprint)}`;
+    const fingerprint = `followup:${sourceNo ?? 'x'}:${purchaseOrder}`;
 
     return {
-      user_id: currentUser.id,
       po_number: purchaseOrder,
       supplier: supplierValue,
       client: cleanText(getCell(row, 'Customer')),
       origin: null,
       incoterm: parseIncoterm(transportationRaw),
       responsible: null,
-      order_date: excelDateToISO(getCell(row, 'PO Received')),
-      estimated_ready_date: excelDateToISO(getCell(row, 'Promised delivery time Quotation')),
+      order_date: excelDateToISO(getFirstCell(row, ['PO Processing Date', 'PO Received'])),
+      estimated_ready_date: excelDateToISO(getFirstCell(row, ['ETD (Promised delivery time)', 'Promised delivery time Quotation'])),
       actual_ready_date: null,
       status: mapExcelStatus(followStatus, hidden),
       notes: null,
@@ -703,22 +1256,119 @@
       lsp_consulted: cleanText(getCell(row, 'LSP Consulted')),
       follow_up_status: followStatus,
       hidden_status: hidden,
-      origin_follow_up_sent: importedAsCharged,
-      origin_follow_up_sent_at: null,
-      origin_response_received: false,
-      origin_response_received_at: null,
-      origin_follow_up_count: importedAsCharged ? 1 : 0,
+      origin_followup_sent: originAlreadyCharged,
+      origin_followup_sent_at: null,
+      origin_followup_answered_at: null,
       import_source: fileName,
       import_fingerprint: fingerprint,
       source_data: row
     };
   }
 
-  async function handleExcelImport(file) {
-    if (!currentUser) {
-      showToast('Faça login antes de importar.', true);
-      return;
+  function importRowKey(record) {
+    return `${record.source_no ?? 'x'}|${record.po_number}`;
+  }
+
+  function analyzeRecords(records) {
+    const health = records.map(getHealth);
+    return {
+      active: records.filter((r) => ['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(r.status))).length,
+      late: health.filter((h) => h.key === 'late').length,
+      today: health.filter((h) => h.key === 'near' && h.days === 0).length,
+      near: health.filter((h) => h.key === 'near' && h.days > 0).length,
+      ontime: health.filter((h) => h.key === 'ontime').length,
+      done: records.filter((r) => normalizeSystemStatus(r.status) === 'Concluído').length,
+      unknown: health.filter((h) => h.key === 'unknown').length
+    };
+  }
+
+  function syncComparable(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? Number(value.toFixed(8)) : null;
+    return String(value).trim();
+  }
+
+  function syncValuesEqual(a, b) {
+    return syncComparable(a) === syncComparable(b);
+  }
+
+  function buildExcelPatch(existing, incoming) {
+    // Somente campos que pertencem à FOLLOW UP podem ser sobrescritos pela planilha.
+    // Campos internos do PO Control (observações manuais, cronômetros, conclusão etc.)
+    // ficam protegidos.
+    const excelFields = [
+      'supplier',
+      'client',
+      'incoterm',
+      'order_date',
+      'estimated_ready_date',
+      'currency',
+      'transportation',
+      'amount_po',
+      'supplier_quotation_no',
+      'supplier_price',
+      'quotation_no',
+      'work_order',
+      'lsp_consulted',
+      'follow_up_status',
+      'hidden_status'
+    ];
+
+    const patch = {};
+    for (const field of excelFields) {
+      if (!syncValuesEqual(existing[field], incoming[field])) {
+        patch[field] = incoming[field];
+      }
     }
+
+    const excelStatusChanged =
+      !syncValuesEqual(existing.follow_up_status, incoming.follow_up_status) ||
+      !syncValuesEqual(existing.hidden_status, incoming.hidden_status);
+
+    // O status interno só acompanha a planilha quando o status da própria planilha mudou.
+    // Assim uma simples alteração de preço/prazo não desfaz um fluxo manual do PO Control.
+    if (excelStatusChanged) {
+      const oldStatus = normalizeSystemStatus(existing.status);
+      const nextStatus = normalizeSystemStatus(incoming.status);
+
+      if (oldStatus !== nextStatus) {
+        patch.status = nextStatus;
+
+        // Mantém a mesma regra da edição manual: ao concluir, grava a data;
+        // ao voltar atrás, limpa a conclusão para registrar uma nova data depois.
+        if (nextStatus === 'Concluído') {
+          patch.completed_at = oldStatus === 'Concluído' && existing.completed_at
+            ? existing.completed_at
+            : new Date().toISOString();
+        } else if (oldStatus === 'Concluído') {
+          patch.completed_at = null;
+        }
+
+        // Se a planilha voltar para "Aguardando resposta" após uma confirmação,
+        // retoma o contador sem perder a data original do envio nem o tempo acumulado.
+        if (
+          nextStatus === 'Aguardando resposta do fornecedor' &&
+          existing.supplier_sent_at &&
+          existing.supplier_confirmed_at
+        ) {
+          patch.supplier_wait_seconds = supplierElapsedSeconds(existing, existing.supplier_confirmed_at);
+          patch.supplier_wait_resumed_at = new Date().toISOString();
+          patch.supplier_confirmed_at = null;
+        }
+      }
+    }
+
+    if (Object.keys(patch).length) {
+      patch.source_data = incoming.source_data;
+      patch.import_source = incoming.import_source;
+      patch.import_fingerprint = existing.import_fingerprint || incoming.import_fingerprint;
+    }
+
+    return patch;
+  }
+
+  async function handleExcelImport(file) {
+    if (!requireEditor('Somente editores podem sincronizar a FOLLOW UP.')) return;
     if (!window.XLSX) {
       showToast('A biblioteca de Excel não foi carregada. Atualize a página.', true, 6000);
       return;
@@ -728,6 +1378,14 @@
     importExcelBtn.textContent = 'Lendo Excel...';
 
     try {
+      // Confirma a sessão direto no Supabase antes de sincronizar.
+      // Isso evita inserir POs novas com user_id vazio caso a sessão em memória esteja desatualizada.
+      const { data: authData, error: authError } = await db.auth.getUser();
+      const syncUser = authData?.user || null;
+      if (authError || !syncUser?.id || !isEditorEmail(syncUser.email)) {
+        throw new Error('Sua sessão de editor expirou ou não foi encontrada. Saia do sistema, entre novamente e tente sincronizar.');
+      }
+
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
       const sheetName = workbook.SheetNames.find((n) => n.trim().toUpperCase() === 'FOLLOW UP') || workbook.SheetNames[0];
@@ -736,57 +1394,418 @@
 
       const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
       const mapped = rawRows.map((row) => excelRowToRecord(row, file.name)).filter(Boolean);
-      const uniqueMap = new Map();
-      for (const record of mapped) uniqueMap.set(record.import_fingerprint, record);
-      const records = [...uniqueMap.values()];
 
+      const uniqueMap = new Map();
+      for (const record of mapped) uniqueMap.set(importRowKey(record), record);
+      const records = [...uniqueMap.values()];
       if (!records.length) throw new Error('Nenhum PO válido foi encontrado na planilha.');
 
-      const withoutEstimate = records.filter((r) => !r.estimated_ready_date).length;
-      const message = `Encontrei ${records.length} registros válidos na aba ${sheetName}.` +
-        (withoutEstimate ? ` ${withoutEstimate} estão sem uma data de prontidão reconhecível.` : '') +
-        `\n\nDeseja importar para o PO Control?`;
-      if (!confirm(message)) return;
+      setSync('Comparando alterações...');
+      const { data: existingData, error: existingError } = await db
+        .from('purchase_orders')
+        .select(`
+          id,user_id,source_no,po_number,import_fingerprint,import_source,
+          supplier,client,incoterm,order_date,estimated_ready_date,
+          currency,transportation,amount_po,supplier_quotation_no,supplier_price,
+          quotation_no,work_order,lsp_consulted,follow_up_status,hidden_status,
+          status,completed_at,supplier_sent_at,supplier_confirmed_at,
+          supplier_wait_seconds,supplier_wait_resumed_at
+        `)
+        .not('import_source', 'is', null);
+      if (existingError) throw new Error(existingError.message);
 
-      const batchSize = 80;
-      for (let i = 0; i < records.length; i += batchSize) {
-        const batch = records.slice(i, i + batchSize);
-        importExcelBtn.textContent = `Importando ${Math.min(i + batch.length, records.length)}/${records.length}...`;
-        setSync(`Importando ${Math.min(i + batch.length, records.length)}/${records.length}`);
-
-        const { error } = await db
-          .from('purchase_orders')
-          .upsert(batch, {
-            onConflict: 'user_id,import_fingerprint',
-            ignoreDuplicates: true
-          });
-
-        if (error) {
-          const migrationHint = /column|constraint|estimated_ready_date|import_fingerprint/i.test(error.message)
-            ? ' Rode primeiro o arquivo migration_excel_import.sql no SQL Editor do Supabase.'
-            : '';
-          throw new Error(`${error.message}.${migrationHint}`);
-        }
+      const existingByKey = new Map();
+      for (const row of (existingData || [])) {
+        const key = `${row.source_no ?? 'x'}|${row.po_number}`;
+        if (!existingByKey.has(key)) existingByKey.set(key, row);
       }
 
-      showToast(`${records.length} registros processados. Importação concluída.`, false, 6000);
+      const inserts = [];
+      const updates = [];
+      let unchangedCount = 0;
+
+      for (const record of records) {
+        const key = importRowKey(record);
+        const existing = existingByKey.get(key);
+
+        if (!existing) {
+          // Regra do fluxo: toda PO nova identificada na planilha entra no
+          // PO Control aguardando a confirmação/resposta do fornecedor,
+          // independentemente do status original informado no Excel.
+          inserts.push({
+            ...record,
+            id: crypto.randomUUID(),
+            user_id: syncUser.id,
+            status: 'Aguardando resposta do fornecedor',
+            completed_at: null,
+            supplier_sent_at: null,
+            supplier_confirmed_at: null,
+            supplier_wait_seconds: 0,
+            supplier_wait_resumed_at: null
+          });
+          continue;
+        }
+
+        const patch = buildExcelPatch(existing, record);
+        if (Object.keys(patch).length) updates.push({ id: existing.id, patch });
+        else unchangedCount++;
+      }
+
+      const incomingKeys = new Set(records.map(importRowKey));
+      // A planilha passa a ser a fonte de verdade somente para registros que vieram dela.
+      // POs manuais não entram em existingData, pois a consulta acima exige import_source preenchido.
+      const removedRows = (existingData || []).filter(
+        (row) => !incomingKeys.has(`${row.source_no ?? 'x'}|${row.po_number}`)
+      );
+      const removedIds = removedRows.map((row) => row.id);
+
+      const analysis = analyzeRecords(records);
+      const message = [
+        `FOLLOW UP encontrada: ${records.length} registros válidos.`,
+        '',
+        `Novas POs: ${inserts.length}`,
+        `POs alteradas: ${updates.length}`,
+        `Sem alteração: ${unchangedCount}`,
+        removedIds.length ? `Removidas da planilha: ${removedIds.length} (serão removidas do sistema)` : '',
+        '',
+        `Atrasados no arquivo: ${analysis.late}`,
+        `Vencem hoje: ${analysis.today}`,
+        `Próximos (1–4 dias): ${analysis.near}`,
+        '',
+        inserts.length || updates.length || removedIds.length
+          ? 'Sincronizar somente as diferenças?'
+          : 'Nenhuma diferença encontrada. Fechar a sincronização?'
+      ].filter(Boolean).join('\n');
+
+      if (!confirm(message)) return;
+
+      if (!inserts.length && !updates.length && !removedIds.length) {
+        showToast(`FOLLOW UP conferida: ${unchangedCount} POs sem alteração. Nada foi regravado.`, false, 6000);
+        setSync('Sem alterações');
+        return;
+      }
+
+      // Novas linhas podem ser inseridas em lote.
+      const batchSize = 80;
+      for (let i = 0; i < inserts.length; i += batchSize) {
+        const batch = inserts.slice(i, i + batchSize).map((row) => ({
+          ...row,
+          user_id: row.user_id || syncUser.id
+        }));
+        importExcelBtn.textContent = `Incluindo ${Math.min(i + batch.length, inserts.length)}/${inserts.length}...`;
+        const { error } = await db.from('purchase_orders').insert(batch);
+        if (error) throw new Error(`Erro ao incluir novas POs: ${error.message}`);
+      }
+
+      // Só atualiza as POs que realmente mudaram.
+      // Rodamos poucas em paralelo para não sobrecarregar o navegador/Supabase.
+      const concurrency = 8;
+      for (let i = 0; i < updates.length; i += concurrency) {
+        const slice = updates.slice(i, i + concurrency);
+        importExcelBtn.textContent = `Atualizando ${Math.min(i + slice.length, updates.length)}/${updates.length}...`;
+        setSync(`Atualizando somente alterações • ${Math.min(i + slice.length, updates.length)}/${updates.length}`);
+
+        const results = await Promise.all(slice.map(({ id, patch }) =>
+          db.from('purchase_orders').update(patch).eq('id', id)
+        ));
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw new Error(`Erro ao atualizar PO: ${failed.error.message}`);
+      }
+
+      // Remove do sistema somente as linhas que vieram do Excel e não existem mais
+      // na versão atual da FOLLOW UP. POs cadastradas manualmente são preservadas.
+      for (let i = 0; i < removedIds.length; i += 100) {
+        const ids = removedIds.slice(i, i + 100);
+        importExcelBtn.textContent = `Removendo ${Math.min(i + ids.length, removedIds.length)}/${removedIds.length}...`;
+        setSync(`Removendo POs excluídas da planilha • ${Math.min(i + ids.length, removedIds.length)}/${removedIds.length}`);
+        const { error } = await db.from('purchase_orders').delete().in('id', ids);
+        if (error) throw new Error(`Erro ao remover POs que saíram da planilha: ${error.message}`);
+      }
+
+      showToast(
+        `FOLLOW UP sincronizada: ${inserts.length} novas, ${updates.length} alteradas, ${removedIds.length} removidas, ${unchangedCount} ignoradas por estarem iguais.`,
+        false,
+        8000
+      );
       await loadOrders();
     } catch (err) {
       console.error(err);
-      showToast(`Erro na importação: ${err.message || err}`, true, 9000);
-      setSync('Erro na importação');
+      showToast(`Erro na sincronização: ${err.message || err}`, true, 9000);
+      setSync('Erro na sincronização');
     } finally {
       importExcelBtn.disabled = false;
-      importExcelBtn.textContent = 'Importar Excel';
+      importExcelBtn.textContent = 'Sincronizar Excel';
       excelFileInput.value = '';
     }
+  }
+
+
+  function formatDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function datetimeLocalValue(value = null) {
+    const d = value ? new Date(value) : new Date();
+    if (Number.isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function hoursLabel(hours) {
+    if (!Number.isFinite(hours)) return '—';
+    const h = Math.max(0, hours);
+    if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
+    if (h < 48) return `${h.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h`;
+    return `${(h / 24).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`;
+  }
+
+  function quoteTiming(q) {
+    const sent = new Date(q.sent_at).getTime();
+    const target = Number(q.target_hours || 24);
+    const deadline = sent + target * 3600000;
+    const end = q.response_at ? new Date(q.response_at).getTime() : Date.now();
+    const elapsed = Math.max(0, (end - sent) / 3600000);
+    const remaining = (deadline - Date.now()) / 3600000;
+    if (q.response_at) {
+      return elapsed <= target
+        ? { key:'answered', label:'Respondida no prazo', cls:'ok', elapsed, remaining, deadline }
+        : { key:'answered', label:'Respondida com atraso', cls:'answered-late', elapsed, remaining, deadline };
+    }
+    if (remaining < 0) return { key:'late', label:`Atrasada ${hoursLabel(Math.abs(remaining))}`, cls:'danger', elapsed, remaining, deadline };
+    if (remaining <= 4) return { key:'attention', label:`Atenção • ${hoursLabel(remaining)} restantes`, cls:'attention', elapsed, remaining, deadline };
+    return { key:'ontime', label:`Dentro do prazo • ${hoursLabel(remaining)} restantes`, cls:'ok', elapsed, remaining, deadline };
+  }
+
+  function renderQuoteSetup(message = '') {
+    if (!quoteSetup) return;
+    if (!message) {
+      quoteSetup.classList.add('hidden');
+      quoteSetup.textContent = '';
+      return;
+    }
+    quoteSetup.textContent = message;
+    quoteSetup.classList.remove('hidden');
+  }
+
+  async function loadQuotes(quiet = false) {
+    if (!canRead() || loadingQuotes) return;
+    loadingQuotes = true;
+    try {
+      const { data, error } = await db
+        .from('china_quotes')
+        .select('*')
+        .order('sent_at', { ascending: false });
+
+      if (error) {
+        quotes = [];
+        quotesTableAvailable = false;
+        renderQuoteSetup('Cotações China ainda não foram ativadas no Supabase. Rode o arquivo migration_china_quotes.sql uma vez no SQL Editor.');
+        renderQuotes();
+        if (!quiet && !/relation|china_quotes|user_id/i.test(error.message)) showToast(`Erro ao carregar cotações: ${error.message}`, true, 6000);
+        return;
+      }
+      quotesTableAvailable = true;
+      renderQuoteSetup('');
+      quotes = data || [];
+      renderQuotes();
+    } finally {
+      loadingQuotes = false;
+    }
+  }
+
+  function renderQuoteMetrics() {
+    const pending = quotes.filter((q) => !q.response_at);
+    const answered = quotes.filter((q) => q.response_at);
+    qWaiting.textContent = pending.length;
+    qOnTime.textContent = pending.filter((q) => quoteTiming(q).key === 'ontime').length;
+    qAttention.textContent = pending.filter((q) => quoteTiming(q).key === 'attention').length;
+    qLate.textContent = pending.filter((q) => quoteTiming(q).key === 'late').length;
+    const avg = answered.length ? answered.reduce((sum, q) => sum + quoteTiming(q).elapsed, 0) / answered.length : null;
+    qAverage.textContent = avg === null ? '—' : hoursLabel(avg);
+    const urgent = pending.filter((q) => ['attention','late'].includes(quoteTiming(q).key)).length;
+    quoteNavBadge.textContent = urgent;
+    quoteNavBadge.classList.toggle('hidden', urgent === 0);
+  }
+
+  function renderQuoteAttention() {
+    const list = quotes
+      .filter((q) => !q.response_at)
+      .map((q) => ({ quote:q, timing:quoteTiming(q) }))
+      .filter((x) => ['attention','late'].includes(x.timing.key))
+      .sort((a,b) => a.timing.remaining - b.timing.remaining)
+      .slice(0, 8);
+
+    if (!list.length) {
+      quoteAttentionList.innerHTML = '<div class="empty">Nenhuma cotação precisa de atenção agora. ✅</div>';
+      return;
+    }
+    quoteAttentionList.innerHTML = list.map(({quote, timing}) => `
+      <div class="alert-row">
+        <div>
+          <strong>${escapeHtml(quote.reference)} — ${escapeHtml(quote.supplier)}</strong>
+          <small>Enviada: ${formatDateTime(quote.sent_at)} • Meta: ${quote.target_hours}h${quote.client ? ` • ${escapeHtml(quote.client)}` : ''}</small>
+        </div>
+        <span class="badge ${timing.cls}">${timing.label}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderQuoteTable() {
+    const search = (quoteSearch?.value || '').trim().toLowerCase();
+    const filter = quoteStatusFilter?.value || '';
+    let list = quotes.filter((q) => {
+      const text = [q.reference, q.supplier, q.client, q.owner, q.notes].filter(Boolean).join(' ').toLowerCase();
+      const timing = quoteTiming(q);
+      const statusOk = !filter ||
+        (filter === 'answered' && !!q.response_at) ||
+        (!q.response_at && timing.key === filter);
+      return (!search || text.includes(search)) && statusOk;
+    });
+
+    const priority = { late:0, attention:1, ontime:2, answered:3 };
+    list.sort((a,b) => {
+      const ah = quoteTiming(a), bh = quoteTiming(b);
+      const p = (priority[ah.key] ?? 9) - (priority[bh.key] ?? 9);
+      if (p) return p;
+      if (!a.response_at && !b.response_at) return ah.remaining - bh.remaining;
+      return new Date(b.sent_at) - new Date(a.sent_at);
+    });
+
+    if (!list.length) {
+      quoteRows.innerHTML = `<tr><td colspan="10" class="empty">${quotesTableAvailable ? 'Nenhuma cotação encontrada.' : 'Ative a tabela china_quotes no Supabase.'}</td></tr>`;
+      return;
+    }
+
+    quoteRows.innerHTML = list.map((q) => {
+      const t = quoteTiming(q);
+      const rowClass = t.key === 'late' ? 'quote-row-late' : (t.key === 'attention' ? 'quote-row-attention' : '');
+      return `<tr class="${rowClass}">
+        <td>${canEdit() ? `<button class="po-link" data-quote-action="edit" data-id="${q.id}">${escapeHtml(q.reference)}</button>` : `<span class="po-number-readonly">${escapeHtml(q.reference)}</span>`}</td>
+        <td>${escapeHtml(q.supplier)}</td>
+        <td>${escapeHtml(q.client || '—')}</td>
+        <td>${formatDateTime(q.sent_at)}<span class="quote-deadline">Prazo: ${formatDateTime(new Date(t.deadline).toISOString())}</span></td>
+        <td>${Number(q.target_hours || 24)}h</td>
+        <td>${formatDateTime(q.response_at)}</td>
+        <td>${hoursLabel(t.elapsed)}</td>
+        <td><span class="badge ${t.cls}">${t.label}</span></td>
+        <td>${escapeHtml(q.owner || '—')}</td>
+        <td>${canEdit() ? `<div class="actions">
+          ${!q.response_at ? `<button class="btn btn-primary btn-small" data-quote-action="answered" data-id="${q.id}">Respondida</button>` : ''}
+          <button class="btn btn-secondary btn-small" data-quote-action="edit" data-id="${q.id}">Editar</button>
+        </div>` : '<span class="readonly-text">Somente leitura</span>'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderQuotes() {
+    if (!qWaiting) return;
+    renderQuoteMetrics();
+    renderQuoteAttention();
+    renderQuoteTable();
+  }
+
+  function openQuoteModal(q = null) {
+    if (!requireEditor()) return;
+    if (!quotesTableAvailable) {
+      showToast('Primeiro rode migration_china_quotes.sql no Supabase.', true, 6000);
+      return;
+    }
+    quoteForm.reset();
+    hideMessage(quoteFormError);
+    quoteId.value = '';
+    quoteSentAt.value = datetimeLocalValue();
+    quoteTargetHours.value = '24';
+    quoteResponseAt.value = '';
+    quoteModalTitle.textContent = 'Nova cotação China';
+    if (q) {
+      quoteModalTitle.textContent = 'Editar cotação China';
+      quoteId.value = q.id;
+      quoteReference.value = q.reference || '';
+      quoteSupplier.value = q.supplier || '';
+      quoteClient.value = q.client || '';
+      quoteSentAt.value = datetimeLocalValue(q.sent_at);
+      quoteTargetHours.value = String(q.target_hours || 24);
+      quoteResponseAt.value = q.response_at ? datetimeLocalValue(q.response_at) : '';
+      quoteOwner.value = q.owner || '';
+      quoteNotes.value = q.notes || '';
+    }
+    quoteModal.classList.remove('hidden');
+    setTimeout(() => quoteReference.focus(), 50);
+  }
+
+  function closeQuoteModal() {
+    quoteModal.classList.add('hidden');
+    quoteForm.reset();
+    hideMessage(quoteFormError);
+    saveQuoteBtn.disabled = false;
+    saveQuoteBtn.textContent = 'Salvar cotação';
+  }
+
+  async function handleSaveQuote(event) {
+    event.preventDefault();
+    hideMessage(quoteFormError);
+    if (!requireEditor()) return;
+    if (!quoteReference.value.trim() || !quoteSupplier.value.trim() || !quoteSentAt.value || !quoteTargetHours.value) {
+      showMessage(quoteFormError, 'Preencha Referência, Fornecedor, Enviada em e Meta de resposta.');
+      return;
+    }
+    const sent = new Date(quoteSentAt.value);
+    const response = quoteResponseAt.value ? new Date(quoteResponseAt.value) : null;
+    if (response && response < sent) {
+      showMessage(quoteFormError, 'A resposta não pode ser anterior ao envio.');
+      return;
+    }
+    saveQuoteBtn.disabled = true;
+    saveQuoteBtn.textContent = 'Salvando...';
+    const isEditing = Boolean(quoteId.value);
+    const payload = {
+      reference: quoteReference.value.trim(),
+      supplier: quoteSupplier.value.trim(),
+      client: quoteClient.value.trim() || null,
+      sent_at: sent.toISOString(),
+      target_hours: Math.max(1, Number(quoteTargetHours.value || 24)),
+      response_at: response ? response.toISOString() : null,
+      owner: quoteOwner.value.trim() || null,
+      notes: quoteNotes.value.trim() || null,
+      updated_at: new Date().toISOString()
+    };
+    try {
+      let result;
+      if (isEditing) {
+        result = await db.from('china_quotes').update(payload).eq('id', quoteId.value);
+      } else {
+        result = await db.from('china_quotes').insert({ ...payload, user_id: currentUser.id });
+      }
+      if (result.error) throw result.error;
+      closeQuoteModal();
+      showToast(isEditing ? 'Cotação atualizada.' : 'Cotação cadastrada.');
+      await loadQuotes();
+    } catch (err) {
+      showMessage(quoteFormError, `Não foi possível salvar: ${err.message || err}`);
+    } finally {
+      saveQuoteBtn.disabled = false;
+      saveQuoteBtn.textContent = 'Salvar cotação';
+    }
+  }
+
+  async function markQuoteAnswered(id) {
+    if (!requireEditor()) return;
+    const { error } = await db.from('china_quotes')
+      .update({ response_at:new Date().toISOString(), updated_at:new Date().toISOString() })
+      .eq('id', id);
+    if (error) { showToast(`Erro ao registrar resposta: ${error.message}`, true); return; }
+    showToast('Resposta registrada.');
+    await loadQuotes();
   }
 
   async function init() {
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
       showMessage(authMessage, 'Configuração do Supabase ausente em config.js.');
       loginBtn.disabled = true;
-      signupBtn.disabled = true;
+      viewerBtn.disabled = true;
       return;
     }
 
@@ -799,21 +1818,42 @@
 
     const { data, error } = await db.auth.getSession();
     if (error) showMessage(authMessage, error.message);
-    setAuthView(data?.session?.user || null);
+    const initialUser = data?.session?.user || null;
+    if (initialUser && isEditorEmail(initialUser.email)) {
+      setAccessView(initialUser, 'editor');
+    } else if (initialUser) {
+      await db.auth.signOut();
+      setAccessView(null, 'signed_out');
+      showMessage(authMessage, 'Este usuário não está autorizado como editor.');
+    } else if (sessionStorage.getItem('po_access_mode') === 'viewer') {
+      setAccessView(null, 'viewer');
+    } else {
+      setAccessView(null, 'signed_out');
+    }
 
     db.auth.onAuthStateChange((_event, session) => {
-      setAuthView(session?.user || null);
+      const user = session?.user || null;
+      if (user && isEditorEmail(user.email)) {
+        setAccessView(user, 'editor');
+      } else if (!user && accessMode !== 'viewer') {
+        setAccessView(null, 'signed_out');
+      }
     });
   }
 
   authForm.addEventListener('submit', handleLogin);
-  signupBtn.addEventListener('click', handleSignup);
+  viewerBtn.addEventListener('click', enterViewerMode);
   logoutBtn.addEventListener('click', async () => {
+    if (accessMode === 'viewer') {
+      sessionStorage.removeItem('po_access_mode');
+      setAccessView(null, 'signed_out');
+      return;
+    }
     await db.auth.signOut();
   });
 
-  newPoBtn.addEventListener('click', () => openModal());
-  importExcelBtn.addEventListener('click', () => excelFileInput.click());
+  newPoBtn.addEventListener('click', () => { if (requireEditor()) openModal(); });
+  importExcelBtn.addEventListener('click', () => { if (requireEditor()) excelFileInput.click(); });
   excelFileInput.addEventListener('change', async () => {
     const file = excelFileInput.files?.[0];
     if (file) await handleExcelImport(file);
@@ -828,27 +1868,80 @@
 
   searchInput.addEventListener('input', renderTable);
   statusFilter.addEventListener('change', renderTable);
-  followUpFilter.addEventListener('change', renderTable);
+  situationFilter?.addEventListener('change', renderTable);
+  originFollowUpFilter?.addEventListener('change', renderTable);
+  orderDateSort?.addEventListener('change', renderTable);
+
+  attentionList.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-attention-id]');
+    if (target) focusOrderInTable(target.dataset.attentionId);
+  });
+
+  recentOrdersList?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-history-id]');
+    if (btn) focusOrderInTable(btn.dataset.historyId);
+  });
+  oldestOrdersList?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-history-id]');
+    if (btn) focusOrderInTable(btn.dataset.historyId);
+  });
+
+  [amountPo, supplierPrice].forEach((input) => {
+    input?.addEventListener('blur', () => {
+      const n = parsePtBrNumber(input.value);
+      input.value = n === null ? '' : formatPtBrNumber(n);
+    });
+    input?.addEventListener('focus', () => input.select());
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && canRead()) { loadOrders(true); loadQuotes(true); }
+  });
+
+
+  modeTabs.forEach((btn) => btn.addEventListener('click', () => showMode(btn.dataset.mode)));
+  newQuoteBtn?.addEventListener('click', () => openQuoteModal());
+  refreshQuotesBtn?.addEventListener('click', () => loadQuotes());
+  closeQuoteModalBtn?.addEventListener('click', closeQuoteModal);
+  cancelQuoteBtn?.addEventListener('click', closeQuoteModal);
+  quoteModal?.addEventListener('click', (event) => { if (event.target === quoteModal) closeQuoteModal(); });
+  quoteForm?.addEventListener('submit', handleSaveQuote);
+  quoteSearch?.addEventListener('input', renderQuoteTable);
+  quoteStatusFilter?.addEventListener('change', renderQuoteTable);
+  quoteRows?.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-quote-action]');
+    if (!button || !canEdit()) return;
+    const id = button.dataset.id;
+    const action = button.dataset.quoteAction;
+    const q = quotes.find((x) => x.id === id);
+    if (action === 'edit' && q) openQuoteModal(q);
+    if (action === 'answered') await markQuoteAnswered(id);
+  });
+
+  ordersBody.addEventListener('change', async (event) => {
+    const checkbox = event.target.closest('[data-origin-followup-toggle]');
+    if (!checkbox) return;
+    if (!canEdit()) {
+      renderTable();
+      return;
+    }
+    await setOriginFollowUp(checkbox.dataset.id, checkbox.checked);
+  });
 
   ordersBody.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-action]');
-    if (!button) return;
+    if (!button || !canEdit()) return;
     const id = button.dataset.id;
     const action = button.dataset.action;
     const order = orders.find((o) => o.id === id);
 
     if (action === 'edit' && order) openModal(order);
-    if (action === 'ready') await markReady(id);
-    if (action === 'delete') await deleteOrder(id);
-    if (action === 'response') await markOriginResponse(id);
-    if (action === 'followup-again') await followUpAgain(id);
-  });
-
-  ordersBody.addEventListener('change', async (event) => {
-    const checkbox = event.target.closest('[data-followup-toggle]');
-    if (!checkbox) return;
-    checkbox.disabled = true;
-    await setOriginFollowUp(checkbox.dataset.id, checkbox.checked);
+    if (action === 'supplier-start') await startSupplierWait(id);
+    if (action === 'supplier-confirm') await confirmSupplierReceipt(id);
+    if (action === 'origin-response') await markOriginResponse(id);
+    if (action === 'origin-recharge') await restartOriginFollowUp(id);
+    if (action === 'complete') await markCompleted(id);
+    if (action === 'delete-protected') await deleteOrderWithPassword(id);
   });
 
   init();

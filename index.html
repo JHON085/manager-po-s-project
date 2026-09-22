@@ -9,17 +9,22 @@
 <body>
   <section id="authPage" class="auth-page">
     <div class="auth-card">
-      <div class="brand">
-        <div class="brand-mark">PO</div>
+      <div class="brand brand-minimal">
+        <img class="zpmc-link-logo zpmc-link-logo-auth" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
         <div>
           <h1>PO Control</h1>
-          <p>Controle de prontidão e atrasos</p>
+          <p>Follow-up de pedidos e cotações</p>
         </div>
       </div>
       <form id="authForm" class="auth-form" novalidate>
         <div class="field">
-          <label for="authEmail">E-mail</label>
-          <input id="authEmail" type="email" autocomplete="email" required />
+          <label for="authEmail">Usuário</label>
+          <select id="authEmail" autocomplete="username" required>
+            <option value="">Selecione seu acesso</option>
+            <option value="joao@zpmcbrazil.com">joao@zpmcbrazil.com</option>
+            <option value="moreira@zpmcbrazil.com">moreira@zpmcbrazil.com</option>
+            <option value="leandro@zpmcbrazil.com">leandro@zpmcbrazil.com</option>
+          </select>
         </div>
         <div class="field">
           <label for="authPassword">Senha</label>
@@ -27,8 +32,9 @@
         </div>
         <div class="auth-actions">
           <button id="loginBtn" type="submit" class="btn btn-primary">Entrar</button>
-          <button id="signupBtn" type="button" class="btn btn-secondary">Criar conta</button>
+          <button id="viewerBtn" type="button" class="btn btn-secondary">Modo espectador</button>
         </div>
+        <p class="auth-note">Acesso de edição restrito à equipe autorizada. O modo espectador é somente leitura.</p>
       </form>
       <div id="authMessage" class="message hidden"></div>
     </div>
@@ -36,35 +42,63 @@
 
   <section id="appPage" class="app hidden">
     <header class="topbar">
-      <div class="left">
-        <div class="logo">PO</div>
+      <div class="left brand-header">
+        <img class="zpmc-link-logo zpmc-link-logo-header" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
         <h2>PO Control</h2>
       </div>
       <div class="right">
         <span id="syncPill" class="sync-pill">Conectando...</span>
+        <span id="rolePill" class="role-pill hidden"></span>
         <span id="userEmail" class="user-email"></span>
         <button id="logoutBtn" type="button" class="btn btn-secondary btn-small">Sair</button>
       </div>
     </header>
 
     <main class="container">
+      <nav class="mode-tabs" aria-label="Áreas do sistema">
+        <button type="button" class="mode-tab active" data-mode="pos">Pedidos / FOLLOW UP</button>
+        <button type="button" class="mode-tab" data-mode="quotes">Cotações China <span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
+      </nav>
+
+      <section id="poView" class="mode-view">
       <div class="page-head">
         <div>
           <h1>Dashboard</h1>
-          <p>Acompanhe os pedidos e veja rapidamente o que está próximo ou atrasado.</p>
+          <p>Acompanhe a FOLLOW UP em tempo real: recebimento, produção, prazos e conclusão.</p>
         </div>
         <div class="page-actions">
-          <button id="importExcelBtn" type="button" class="btn btn-secondary">Importar Excel</button>
-          <button id="newPoBtn" type="button" class="btn btn-primary">+ Novo PO</button>
+          <button id="importExcelBtn" type="button" class="btn btn-secondary" data-editor-only>Sincronizar Excel</button>
+          <button id="newPoBtn" type="button" class="btn btn-primary" data-editor-only>+ Novo PO</button>
         </div>
       </div>
 
       <section class="metrics">
-        <div class="metric"><div class="label">POs ativos</div><div id="metricActive" class="value">0</div><div class="hint">Ainda não concluídos</div></div>
-        <div class="metric success"><div class="label">No prazo</div><div id="metricOnTime" class="value">0</div><div class="hint">Mais de 7 dias</div></div>
-        <div class="metric warning"><div class="label">Próximos</div><div id="metricNear" class="value">0</div><div class="hint">Até 7 dias</div></div>
+        <div class="metric total"><div class="label">Total de POs</div><div id="metricTotal" class="value">0</div><div class="hint">Todos os registros da base</div></div>
+        <div class="metric"><div class="label">POs ativos</div><div id="metricActive" class="value">0</div><div class="hint">Ainda em acompanhamento</div></div>
+        <div class="metric success"><div class="label">No prazo</div><div id="metricOnTime" class="value">0</div><div class="hint">Mais de 4 dias</div></div>
+        <div class="metric warning"><div class="label">Próximos</div><div id="metricNear" class="value">0</div><div class="hint">Hoje ou nos próximos 4 dias</div></div>
         <div class="metric danger"><div class="label">Atrasados</div><div id="metricLate" class="value">0</div><div class="hint">Prontidão prevista já passou</div></div>
-        <div class="metric followup"><div class="label">Aguardando origem</div><div id="metricWaiting" class="value">0</div><div class="hint">Cobrado e sem resposta</div></div>
+        <div class="metric origin-wait"><div class="label">Aguardando origem</div><div id="metricOriginWaiting" class="value">0</div><div class="hint">Já cobrados e sem resposta</div></div>
+        <div class="metric done"><div class="label">Concluídos</div><div id="metricDone" class="value">0</div><div class="hint">Finalizados na FOLLOW UP</div></div>
+      </section>
+
+      <section class="panel po-age-panel">
+        <div class="panel-head">
+          <div>
+            <h3>Histórico das POs</h3>
+            <p class="panel-subtitle">Mais recentes e mais antigas pela Data do pedido</p>
+          </div>
+        </div>
+        <div class="po-age-grid">
+          <div class="po-age-column">
+            <div class="po-age-title">Mais recentes</div>
+            <div id="recentOrdersList" class="po-age-list"><div class="empty compact-empty">Sem datas disponíveis.</div></div>
+          </div>
+          <div class="po-age-column">
+            <div class="po-age-title">Mais antigas</div>
+            <div id="oldestOrdersList" class="po-age-list"><div class="empty compact-empty">Sem datas disponíveis.</div></div>
+          </div>
+        </div>
       </section>
 
       <section class="panel">
@@ -79,27 +113,91 @@
             <input id="searchInput" type="search" placeholder="Buscar PO, fornecedor, cliente..." />
             <select id="statusFilter">
               <option value="">Todos os status</option>
-              <option>Aguardando produção</option>
-              <option>Em produção</option>
-              <option>Pronto</option>
-              <option>Embarcado</option>
-              <option>Concluído</option>
-              <option>Cancelado</option>
+              <option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option>
+              <option value="Em produção">Em produção</option>
+              <option value="Concluído">Concluído</option>
+              <option value="Cancelado">Cancelada</option>
             </select>
-            <select id="followUpFilter">
+            <select id="situationFilter">
+              <option value="">Todas as situações</option>
+              <option value="late">Atrasados</option>
+              <option value="today">Vence hoje</option>
+              <option value="near">Próximos (1–4 dias)</option>
+              <option value="ontime">No prazo</option>
+              <option value="done">Finalizados</option>
+              <option value="unknown">Sem data</option>
+            </select>
+            <select id="originFollowUpFilter" aria-label="Filtrar cobrança à origem">
               <option value="">Todas as cobranças</option>
-              <option value="not_sent">Não cobrado</option>
+              <option value="not_charged">Não cobrado</option>
               <option value="waiting">Aguardando resposta</option>
-              <option value="replied">Resposta recebida</option>
+              <option value="answered">Resposta recebida</option>
+            </select>
+            <select id="orderDateSort" aria-label="Ordenar por data do pedido">
+              <option value="">Ordem padrão</option>
+              <option value="recent">Mais recentes</option>
+              <option value="oldest">Mais antigas</option>
             </select>
           </div>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>PO</th><th>Fornecedor</th><th>Cliente</th><th>Estimativa</th><th>Status</th><th>Cobrança origem</th><th>Situação</th><th>Ações</th></tr></thead>
-            <tbody id="ordersBody"><tr><td colspan="8" class="empty">Carregando...</td></tr></tbody>
+            <thead><tr><th>PO</th><th>Fornecedor</th><th>Cliente</th><th>Estimativa</th><th>Etapa FOLLOW UP</th><th>Cobrança origem</th><th>Situação</th><th>Status</th><th>Confirmação fornecedor</th><th>Ações</th></tr></thead>
+            <tbody id="ordersBody"><tr><td colspan="10" class="empty">Carregando...</td></tr></tbody>
           </table>
         </div>
+      </section>
+
+      </section>
+
+      <section id="quotesView" class="mode-view hidden">
+        <div class="page-head">
+          <div>
+            <h1>Cotações China</h1>
+            <p>Acompanhe o tempo de resposta das RFQs enviadas aos fornecedores da China.</p>
+          </div>
+          <div class="page-actions">
+            <button id="refreshQuotesBtn" type="button" class="btn btn-secondary">Atualizar</button>
+            <button id="newQuoteBtn" type="button" class="btn btn-primary" data-editor-only>+ Nova cotação</button>
+          </div>
+        </div>
+
+        <div id="quoteSetup" class="message warning-message hidden"></div>
+
+        <section class="metrics quote-metrics">
+          <div class="metric"><div class="label">Aguardando</div><div id="qWaiting" class="value">0</div><div class="hint">Ainda sem resposta</div></div>
+          <div class="metric success"><div class="label">Dentro do prazo</div><div id="qOnTime" class="value">0</div><div class="hint">Mais de 4h restantes</div></div>
+          <div class="metric warning"><div class="label">Atenção</div><div id="qAttention" class="value">0</div><div class="hint">Até 4h para vencer</div></div>
+          <div class="metric danger"><div class="label">Atrasadas</div><div id="qLate" class="value">0</div><div class="hint">Meta de resposta estourou</div></div>
+          <div class="metric done"><div class="label">Tempo médio</div><div id="qAverage" class="value small-value">—</div><div class="hint">Das já respondidas</div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h3>⚠ Cotações que precisam de atenção</h3></div>
+          <div id="quoteAttentionList" class="alert-list"><div class="empty">Nenhuma cotação precisa de atenção agora. ✅</div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h3>Controle de cotações</h3>
+            <div class="filters">
+              <input id="quoteSearch" type="search" placeholder="Buscar referência, fornecedor, cliente..." />
+              <select id="quoteStatusFilter">
+                <option value="">Todas as situações</option>
+                <option value="ontime">Dentro do prazo</option>
+                <option value="attention">Atenção (até 4h)</option>
+                <option value="late">Atrasadas</option>
+                <option value="answered">Respondidas</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="quote-table">
+              <thead><tr><th>Referência</th><th>Fornecedor</th><th>Cliente</th><th>Enviada</th><th>Meta</th><th>Resposta</th><th>Tempo</th><th>Situação</th><th>Responsável</th><th>Ações</th></tr></thead>
+              <tbody id="quoteRows"><tr><td colspan="10" class="empty">Carregando...</td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </main>
   </section>
@@ -120,10 +218,9 @@
             <div class="field"><label for="poOrigin">Origem</label><input id="poOrigin" /></div>
             <div class="field"><label for="incoterm">Incoterm</label><select id="incoterm"><option value="">Selecione</option><option>EXW</option><option>FCA</option><option>FOB</option><option>FOB/FCA</option><option>CFR</option><option>CIF</option><option>CIP</option><option>DAP</option><option>DDP</option></select></div>
             <div class="field"><label for="responsible">Responsável</label><input id="responsible" /></div>
-            <div class="field"><label for="orderDate">Data do pedido</label><input id="orderDate" type="date" /></div>
-            <div class="field"><label for="estimatedReadyDate">Estimativa de prontidão *</label><input id="estimatedReadyDate" type="date" required /></div>
-            <div class="field"><label for="actualReadyDate">Prontidão real</label><input id="actualReadyDate" type="date" /></div>
-            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option>Aguardando produção</option><option>Em produção</option><option>Pronto</option><option>Embarcado</option><option>Concluído</option><option>Cancelado</option></select></div>
+            <div class="field"><label for="orderDate">Data de envio da PO (PO Processing Date)</label><input id="orderDate" type="date" /></div>
+            <div class="field"><label for="estimatedReadyDate">ETD / Estimativa de prontidão</label><input id="estimatedReadyDate" type="date" /></div>
+            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option><option value="Em produção">Em produção</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
             <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
 
             <details class="extra-section span-3">
@@ -131,9 +228,9 @@
               <div class="extra-grid">
                 <div class="field"><label for="currency">Moeda</label><input id="currency" /></div>
                 <div class="field"><label for="transportation">Transportation</label><input id="transportation" /></div>
-                <div class="field"><label for="amountPo">Amount of PO</label><input id="amountPo" type="number" step="0.01" /></div>
+                <div class="field"><label for="amountPo">Amount of PO</label><input id="amountPo" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
                 <div class="field"><label for="supplierQuotationNo">Supplier Quotation nº</label><input id="supplierQuotationNo" /></div>
-                <div class="field"><label for="supplierPrice">Supplier Price</label><input id="supplierPrice" type="number" step="0.01" /></div>
+                <div class="field"><label for="supplierPrice">Supplier Price</label><input id="supplierPrice" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
                 <div class="field"><label for="quotationNo">Quotation NO.</label><input id="quotationNo" /></div>
                 <div class="field"><label for="workOrder">Work Order</label><input id="workOrder" /></div>
                 <div class="field"><label for="lspConsulted">LSP Consulted</label><input id="lspConsulted" /></div>
@@ -152,8 +249,42 @@
     </div>
   </div>
 
+
+  <div id="quoteModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal quote-modal">
+      <div class="modal-head">
+        <h3 id="quoteModalTitle">Nova cotação China</h3>
+        <button id="closeQuoteModalBtn" type="button" class="icon-btn" aria-label="Fechar">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="quoteForm" novalidate>
+          <input id="quoteId" type="hidden" />
+          <div class="form-grid">
+            <div class="field"><label for="quoteReference">Referência / RFQ *</label><input id="quoteReference" required placeholder="Ex.: RFQ-2026-014" /></div>
+            <div class="field"><label for="quoteSupplier">Fornecedor / contato China *</label><input id="quoteSupplier" required placeholder="Ex.: Terminexus China" /></div>
+            <div class="field"><label for="quoteClient">Cliente</label><input id="quoteClient" placeholder="Ex.: Santos Brasil" /></div>
+            <div class="field"><label for="quoteSentAt">Enviada em *</label><input id="quoteSentAt" type="datetime-local" required /></div>
+            <div class="field"><label for="quoteTargetHours">Meta de resposta (horas) *</label><input id="quoteTargetHours" type="number" min="1" step="1" value="24" required /></div>
+            <div class="field"><label for="quoteResponseAt">Respondida em</label><input id="quoteResponseAt" type="datetime-local" /></div>
+            <div class="field"><label for="quoteOwner">Responsável</label><input id="quoteOwner" placeholder="Ex.: João" /></div>
+            <div class="field span-2"><label for="quoteNotes">Observações / itens cotados</label><textarea id="quoteNotes" placeholder="Ex.: Aguardando preço e lead time da fábrica"></textarea></div>
+          </div>
+          <div id="quoteFormError" class="message error form-error hidden"></div>
+          <div class="modal-actions">
+            <button id="cancelQuoteBtn" type="button" class="btn btn-secondary">Cancelar</button>
+            <button id="saveQuoteBtn" type="submit" class="btn btn-primary">Salvar cotação</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <input id="excelFileInput" type="file" accept=".xlsx,.xlsm,.xls" hidden />
   <div id="toast" class="toast hidden"></div>
+
+  <footer style="text-align:center; padding:22px 16px 18px; color:#98a2b3; font-size:12px; font-weight:400; letter-spacing:.01em;">
+    Developed by João Rafael
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
