@@ -787,16 +787,17 @@
             ${normalizeSystemStatus(o.status) === 'Concluído' && o.completed_at ? `<small class="completion-date">Concluído em ${escapeHtml(formatDateOnly(o.completed_at))}</small>` : ''}
           </td>
           <td>${supplierWaitHtml(o)}</td>
-          <td>${canEdit() ? `
-            <div class="actions">
-              <button class="btn btn-secondary btn-small" data-action="edit" data-id="${o.id}">Editar</button>
-              ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button class="btn btn-primary btn-small" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
-              ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button class="btn btn-primary btn-small" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
-              ${['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button class="btn btn-secondary btn-small" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
+          <td class="actions-cell">${canEdit() ? `
+            <div class="actions actions-compact">
               <details class="po-row-menu">
-                <summary title="Mais opções" aria-label="Mais opções para a PO ${escapeHtml(o.po_number)}">•••</summary>
+                <summary title="Ações" aria-label="Ações para a PO ${escapeHtml(o.po_number)}">•••</summary>
                 <div class="po-row-menu-popover">
-                  <button type="button" class="po-delete-option" data-action="delete-protected" data-id="${o.id}">Excluir PO</button>
+                  <button type="button" class="po-menu-option" data-action="edit" data-id="${o.id}">Editar PO</button>
+                  ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button type="button" class="po-menu-option" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
+                  ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button type="button" class="po-menu-option" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
+                  ${['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button type="button" class="po-menu-option" data-action="complete" data-id="${o.id}">Concluir PO</button>` : ''}
+                  <div class="po-menu-separator"></div>
+                  <button type="button" class="po-menu-option po-delete-option" data-action="delete-protected" data-id="${o.id}">Excluir PO</button>
                 </div>
               </details>
             </div>` : '<span class="readonly-text">Somente leitura</span>'}
@@ -1934,6 +1935,9 @@
     const id = button.dataset.id;
     const action = button.dataset.action;
     const order = orders.find((o) => o.id === id);
+
+    // Fecha o menu de ações assim que uma opção é escolhida.
+    button.closest('details.po-row-menu')?.removeAttribute('open');
 
     if (action === 'edit' && order) openModal(order);
     if (action === 'supplier-start') await startSupplierWait(id);
