@@ -239,13 +239,25 @@
       return;
     }
 
-    const { error } = await db
-      .from('purchase_orders')
-      .delete()
-      .eq('id', id);
+    // A exclusão usa uma função protegida no Supabase. Isso evita que uma
+    // policy antiga de DELETE impeça editores autorizados de excluir a PO.
+    const { data: deleted, error } = await db.rpc('delete_purchase_order', { p_id: id });
 
     if (error) {
-      showToast(`Erro ao excluir a PO: ${error.message}`, true, 7000);
+      const missingRpc = /delete_purchase_order|schema cache|function/i.test(String(error.message || ''));
+      showToast(
+        missingRpc
+          ? 'A função de exclusão ainda não existe no Supabase. Rode o arquivo migration_v5_9_acoes.sql no SQL Editor.'
+          : `Erro ao excluir a PO: ${error.message}`,
+        true,
+        9000
+      );
+      return;
+    }
+
+    if (deleted !== true) {
+      showToast('A PO não foi encontrada ou já havia sido excluída.', true, 6500);
+      await loadOrders(true);
       return;
     }
 
@@ -773,6 +785,8 @@
 
     ordersBody.innerHTML = filtered.map((o) => {
       const health = getHealth(o);
+      const normalizedStatus = normalizeSystemStatus(o.status);
+      const canCompleteOrder = !['Concluído', 'Cancelado'].includes(normalizedStatus);
       return `
         <tr class="row-${health.key}" data-po-id="${o.id}">
           <td>${canEdit() ? `<button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button>` : `<span class="po-number-readonly">${escapeHtml(o.po_number)}</span>`}</td>
@@ -789,13 +803,14 @@
           <td>${supplierWaitHtml(o)}</td>
           <td class="actions-cell">${canEdit() ? `
             <div class="actions actions-compact">
+              ${canCompleteOrder ? `<button type="button" class="btn btn-success btn-small quick-complete-btn" data-action="complete" data-id="${o.id}">Concluir</button>` : ''}
               <details class="po-row-menu">
-                <summary title="Ações" aria-label="Ações para a PO ${escapeHtml(o.po_number)}">•••</summary>
+                <summary title="Mais ações" aria-label="Mais ações para a PO ${escapeHtml(o.po_number)}">•••</summary>
                 <div class="po-row-menu-popover">
                   <button type="button" class="po-menu-option" data-action="edit" data-id="${o.id}">Editar PO</button>
-                  ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button type="button" class="po-menu-option" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
-                  ${normalizeSystemStatus(o.status) === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button type="button" class="po-menu-option" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
-                  ${['Aguardando resposta do fornecedor', 'Em produção'].includes(normalizeSystemStatus(o.status)) ? `<button type="button" class="po-menu-option" data-action="complete" data-id="${o.id}">Concluir PO</button>` : ''}
+                  ${normalizedStatus === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button type="button" class="po-menu-option" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
+                  ${normalizedStatus === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button type="button" class="po-menu-option" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
+                  ${canCompleteOrder ? `<button type="button" class="po-menu-option po-complete-option" data-action="complete" data-id="${o.id}">Concluir ordem</button>` : '<span class="po-menu-disabled">Ordem já finalizada</span>'}
                   <div class="po-menu-separator"></div>
                   <button type="button" class="po-menu-option po-delete-option" data-action="delete-protected" data-id="${o.id}">Excluir PO</button>
                 </div>
@@ -1930,6 +1945,15 @@
   });
 
   ordersBody.addEventListener('click', async (event) => {
+    const summary = event.target.closest('summary');
+    if (summary?.parentElement?.matches('details.po-row-menu')) {
+      const current = summary.parentElement;
+      document.querySelectorAll('details.po-row-menu[open]').forEach((menu) => {
+        if (menu !== current) menu.removeAttribute('open');
+      });
+      return;
+    }
+
     const button = event.target.closest('[data-action]');
     if (!button || !canEdit()) return;
     const id = button.dataset.id;
@@ -1946,6 +1970,12 @@
     if (action === 'origin-recharge') await restartOriginFollowUp(id);
     if (action === 'complete') await markCompleted(id);
     if (action === 'delete-protected') await deleteOrderWithPassword(id);
+  });
+
+  document.addEventListener('click', (event) => {
+    document.querySelectorAll('details.po-row-menu[open]').forEach((menu) => {
+      if (!menu.contains(event.target)) menu.removeAttribute('open');
+    });
   });
 
   init();

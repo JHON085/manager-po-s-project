@@ -500,3 +500,38 @@ tr:hover .actions-cell { background:#fafbfc; }
 .po-menu-separator { height:1px; background:var(--border); margin:5px 2px; }
 .po-menu-option.po-delete-option { color:var(--danger); }
 .po-menu-option.po-delete-option:hover { background:var(--danger-bg); }
+
+
+/* ===== v5.9 - ações corrigidas ===== */
+.btn-success { background:#16845b; color:#fff; border:1px solid #16845b; }
+.btn-success:hover:not(:disabled) { background:#10724d; }
+.actions-header,
+.actions-cell {
+  min-width:148px;
+  width:148px;
+  overflow:visible !important;
+}
+.actions-compact { align-items:center; gap:7px; }
+.quick-complete-btn { padding:7px 10px; white-space:nowrap; }
+.actions-cell:has(.po-row-menu[open]) { z-index:80; }
+.po-row-menu[open] { z-index:90; }
+.po-row-menu-popover {
+  z-index:100;
+  min-width:210px;
+  top:calc(100% + 5px);
+  right:0;
+  isolation:isolate;
+  box-shadow:0 14px 34px rgba(15,23,42,.20);
+}
+.po-complete-option { color:#116149; }
+.po-complete-option:hover { background:#ecfdf3; }
+.po-menu-disabled {
+  display:block;
+  padding:9px 10px;
+  color:#98a2b3;
+  font-size:12px;
+  font-weight:600;
+  white-space:nowrap;
+}
+/* A célula da linha que tem o menu aberto precisa ficar acima das linhas seguintes. */
+tbody tr:has(.po-row-menu[open]) { position:relative; z-index:70; }
