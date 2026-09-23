@@ -1218,7 +1218,7 @@
     if (!order) return;
 
     if (!checked) {
-      const ok = confirm(`Desmarcar a notificação da PO ${order.po_number}? Isso limpará o status de aguardando/resposta da origem.`);
+      const ok = confirm(`Desmarcar a cobrança da PO ${order.po_number}? Isso limpará o status de aguardando/resposta da origem.`);
       if (!ok) {
         renderTable();
         return;
