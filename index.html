@@ -78,7 +78,7 @@
         <div class="metric success"><div class="label">No prazo</div><div id="metricOnTime" class="value">0</div><div class="hint">Mais de 4 dias</div></div>
         <div class="metric warning"><div class="label">Próximos</div><div id="metricNear" class="value">0</div><div class="hint">Hoje ou nos próximos 4 dias</div></div>
         <div class="metric danger"><div class="label">Atrasados</div><div id="metricLate" class="value">0</div><div class="hint">Prontidão prevista já passou</div></div>
-        <div class="metric origin-wait"><div class="label">Aguardando origem</div><div id="metricOriginWaiting" class="value">0</div><div class="hint">Já cobrados e sem resposta</div></div>
+        <div class="metric origin-wait"><div class="label">Aguardando origem</div><div id="metricOriginWaiting" class="value">0</div><div class="hint">Já notificados e sem resposta</div></div>
         <div class="metric done"><div class="label">Concluídos</div><div id="metricDone" class="value">0</div><div class="hint">Finalizados na FOLLOW UP</div></div>
       </section>
 
@@ -127,9 +127,9 @@
               <option value="done">Finalizados</option>
               <option value="unknown">Sem data</option>
             </select>
-            <select id="originFollowUpFilter" aria-label="Filtrar cobrança à origem">
-              <option value="">Todas as cobranças</option>
-              <option value="not_charged">Não cobrado</option>
+            <select id="originFollowUpFilter" aria-label="Filtrar prontidão / notificação">
+              <option value="">Todas as prontidões</option>
+              <option value="not_charged">Não notificado</option>
               <option value="waiting">Aguardando resposta</option>
               <option value="answered">Resposta recebida</option>
             </select>
@@ -142,8 +142,8 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>PO</th><th>Fornecedor</th><th>Cliente</th><th>Estimativa</th><th>Etapa FOLLOW UP</th><th>Cobrança origem</th><th>Situação</th><th>Status</th><th>Confirmação fornecedor</th><th class="actions-header">Ações</th></tr></thead>
-            <tbody id="ordersBody"><tr><td colspan="10" class="empty">Carregando...</td></tr></tbody>
+            <thead><tr><th>PO</th><th>Fornecedor</th><th>Cliente</th><th>Estimativa</th><th>Prontidão real</th><th>Etapa FOLLOW UP</th><th>Prontidão</th><th>Situação</th><th>Status</th><th>Confirmação fornecedor</th><th class="actions-header">Ações</th></tr></thead>
+            <tbody id="ordersBody"><tr><td colspan="11" class="empty">Carregando...</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -211,34 +211,66 @@
       <div class="modal-body">
         <form id="poForm" novalidate>
           <input id="poId" type="hidden" />
-          <div class="form-grid">
-            <div class="field"><label for="poNumber">Número do PO *</label><input id="poNumber" required /></div>
-            <div class="field"><label for="supplier">Fornecedor *</label><input id="supplier" required /></div>
-            <div class="field"><label for="client">Cliente</label><input id="client" /></div>
-            <div class="field"><label for="poOrigin">Origem</label><input id="poOrigin" /></div>
-            <div class="field"><label for="incoterm">Incoterm</label><select id="incoterm"><option value="">Selecione</option><option>EXW</option><option>FCA</option><option>FOB</option><option>FOB/FCA</option><option>CFR</option><option>CIF</option><option>CIP</option><option>DAP</option><option>DDP</option></select></div>
-            <div class="field"><label for="responsible">Responsável</label><input id="responsible" /></div>
-            <div class="field"><label for="orderDate">Data de envio da PO (PO Processing Date)</label><input id="orderDate" type="date" /></div>
-            <div class="field"><label for="estimatedReadyDate">ETD / Estimativa de prontidão</label><input id="estimatedReadyDate" type="date" /></div>
-            <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option><option value="Em produção">Em produção</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
-            <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
 
-            <details class="extra-section span-3">
-              <summary>Dados adicionais da planilha</summary>
-              <div class="extra-grid">
-                <div class="field"><label for="currency">Moeda</label><input id="currency" /></div>
-                <div class="field"><label for="transportation">Transportation</label><input id="transportation" /></div>
-                <div class="field"><label for="amountPo">Amount of PO</label><input id="amountPo" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
-                <div class="field"><label for="supplierQuotationNo">Supplier Quotation nº</label><input id="supplierQuotationNo" /></div>
-                <div class="field"><label for="supplierPrice">Supplier Price</label><input id="supplierPrice" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
-                <div class="field"><label for="quotationNo">Quotation NO.</label><input id="quotationNo" /></div>
-                <div class="field"><label for="workOrder">Work Order</label><input id="workOrder" /></div>
-                <div class="field"><label for="lspConsulted">LSP Consulted</label><input id="lspConsulted" /></div>
-                <div class="field"><label for="followUpStatus">Status original da planilha</label><input id="followUpStatus" /></div>
-                <div class="field"><label for="hiddenStatus">Status oculto</label><input id="hiddenStatus" /></div>
-              </div>
-            </details>
+          <div class="process-tabs" role="tablist" aria-label="Abas do processo">
+            <button id="processDataTab" type="button" class="process-tab active" data-process-tab="data">Dados do processo</button>
+            <button id="processSheetTab" type="button" class="process-tab" data-process-tab="sheet">Planilha do processo</button>
           </div>
+
+          <section id="processDataPanel" class="process-panel">
+            <div class="form-grid">
+              <div class="field"><label for="poNumber">Número do PO *</label><input id="poNumber" required /></div>
+              <div class="field"><label for="supplier">Fornecedor *</label><input id="supplier" required /></div>
+              <div class="field"><label for="client">Cliente</label><input id="client" /></div>
+              <div class="field"><label for="poOrigin">Origem</label><input id="poOrigin" /></div>
+              <div class="field"><label for="incoterm">Incoterm</label><select id="incoterm"><option value="">Selecione</option><option>EXW</option><option>FCA</option><option>FOB</option><option>FOB/FCA</option><option>CFR</option><option>CIF</option><option>CIP</option><option>DAP</option><option>DDP</option></select></div>
+              <div class="field"><label for="responsible">Responsável</label><input id="responsible" /></div>
+              <div class="field"><label for="orderDate">Data de envio da PO (PO Processing Date)</label><input id="orderDate" type="date" /></div>
+              <div class="field"><label for="estimatedReadyDate">ETD / Estimativa de prontidão</label><input id="estimatedReadyDate" type="date" /></div>
+              <div class="field"><label for="actualReadyDate">Prontidão</label><input id="actualReadyDate" type="date" /></div>
+              <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option><option value="Em produção">Em produção</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
+              <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
+
+              <details class="extra-section span-3">
+                <summary>Dados adicionais da planilha</summary>
+                <div class="extra-grid">
+                  <div class="field"><label for="currency">Moeda</label><input id="currency" /></div>
+                  <div class="field"><label for="transportation">Transportation</label><input id="transportation" /></div>
+                  <div class="field"><label for="amountPo">Amount of PO</label><input id="amountPo" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
+                  <div class="field"><label for="supplierQuotationNo">Supplier Quotation nº</label><input id="supplierQuotationNo" /></div>
+                  <div class="field"><label for="supplierPrice">Supplier Price</label><input id="supplierPrice" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" /></div>
+                  <div class="field"><label for="quotationNo">Quotation NO.</label><input id="quotationNo" /></div>
+                  <div class="field"><label for="workOrder">Work Order</label><input id="workOrder" /></div>
+                  <div class="field"><label for="lspConsulted">LSP Consulted</label><input id="lspConsulted" /></div>
+                  <div class="field"><label for="followUpStatus">Status original da planilha</label><input id="followUpStatus" /></div>
+                  <div class="field"><label for="hiddenStatus">Status oculto</label><input id="hiddenStatus" /></div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section id="processSheetPanel" class="process-panel hidden">
+            <div class="process-sheet-head">
+              <div>
+                <strong>Planilha deste processo</strong>
+                <small>Os dados abaixo pertencem somente a esta PO.</small>
+              </div>
+            </div>
+            <div class="sheet-table-wrap process-sheet-wrap">
+              <table class="sheet-table process-sheet-table">
+                <thead>
+                  <tr>
+                    <th>NO.</th><th>Customer</th><th>Purchase Order</th><th>ZPMC</th><th>Supplier</th>
+                    <th>Amount of PO</th><th>Supplier Price</th><th>Profit</th><th>Profit %</th><th>Supplier Quotation nº</th>
+                    <th>Sales</th><th>Quotation NO.</th><th>Work Order</th><th>SAP - POSTING NUMBER</th><th>SAP - PICKING NUMBER</th>
+                    <th>LSP Consulted</th><th>Tracking (LSP)</th><th>PO Received</th><th>PO Processing Date</th><th>ETD</th><th>Prontidão</th><th>Transportation</th>
+                  </tr>
+                </thead>
+                <tbody id="processSheetRows"><tr><td colspan="22" class="empty">Abra um processo para visualizar a planilha.</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+
           <div id="formError" class="message error form-error hidden"></div>
           <div class="modal-actions">
             <button id="cancelPoBtn" type="button" class="btn btn-secondary">Cancelar</button>
