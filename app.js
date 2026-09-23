@@ -2,10 +2,56 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const cfg = window.PO_CONFIG || {
-    SUPABASE_URL: window.PO_SUPABASE_URL || '',
-    SUPABASE_KEY: window.PO_SUPABASE_PUBLISHABLE_KEY || window.PO_SUPABASE_ANON_KEY || ''
+  const cfg = {
+    SUPABASE_URL: window.PO_CONFIG?.SUPABASE_URL || window.PO_SUPABASE_URL || 'https://ftlcqrcfguzstgxhlphy.supabase.co',
+    SUPABASE_KEY: window.PO_CONFIG?.SUPABASE_KEY || window.PO_SUPABASE_PUBLISHABLE_KEY || window.PO_SUPABASE_ANON_KEY || 'sb_publishable_2DwyJ4UfUV77ld5YeVYMXA_9a4vrvpB'
   };
+
+  function loadExternalScript(src, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      let finished = false;
+      const timer = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        script.remove();
+        reject(new Error(`Timeout ao carregar ${src}`));
+      }, timeoutMs);
+      script.src = src;
+      script.async = true;
+      script.onload = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      script.onerror = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        script.remove();
+        reject(new Error(`Falha ao carregar ${src}`));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  async function ensureSupabaseLibrary() {
+    if (window.supabase?.createClient) return true;
+    const sources = [
+      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+      'https://unpkg.com/@supabase/supabase-js@2'
+    ];
+    for (const src of sources) {
+      try {
+        await loadExternalScript(src);
+        if (window.supabase?.createClient) return true;
+      } catch (err) {
+        console.warn(err);
+      }
+    }
+    return false;
+  }
 
   const authPage = $('authPage');
   const appPage = $('appPage');
@@ -1063,7 +1109,7 @@
       return;
     }
     if (!db?.auth) {
-      showMessage(authMessage, 'Supabase não inicializou. Confira o config.js e atualize a página.');
+      showMessage(authMessage, 'Supabase ainda não inicializou. Aguarde alguns segundos e tente novamente. Se persistir, a biblioteca externa está bloqueada pela rede.');
       return;
     }
 
@@ -2064,9 +2110,10 @@
       return;
     }
 
-    if (!window.supabase || !window.supabase.createClient) {
-      showMessage(authMessage, 'Biblioteca do Supabase não carregou. Atualize a página ou verifique a conexão.');
-      loginBtn.disabled = true;
+    const supabaseReady = await ensureSupabaseLibrary();
+    if (!supabaseReady) {
+      showMessage(authMessage, 'Não foi possível carregar a biblioteca do Supabase. Verifique a internet/rede corporativa e atualize a página.');
+      loginBtn.disabled = false;
       return;
     }
 
