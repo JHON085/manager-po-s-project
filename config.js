@@ -1,4 +1,10 @@
+// PO Control - Supabase configuration
+// Publishable key only. NEVER put sb_secret_ or service_role here.
+
+window.PO_SUPABASE_URL = 'https://ftlcqrcfguzstgxhlphy.supabase.co';
+window.PO_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_2DwyJ4UfUV77ld5YeVYMXA_9a4vrvpB';
+
 window.PO_CONFIG = {
-  SUPABASE_URL: 'https://ftlcqrcfguzstgxhlphy.supabase.co',
-  SUPABASE_KEY: 'sb_publishable_2DwyJ4UfUV77ld5YeVYMXA_9a4vrvpB'
+  SUPABASE_URL: window.PO_SUPABASE_URL,
+  SUPABASE_KEY: window.PO_SUPABASE_PUBLISHABLE_KEY
 };
