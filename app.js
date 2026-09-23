@@ -2,56 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const cfg = {
-    SUPABASE_URL: window.PO_CONFIG?.SUPABASE_URL || window.PO_SUPABASE_URL || 'https://ftlcqrcfguzstgxhlphy.supabase.co',
-    SUPABASE_KEY: window.PO_CONFIG?.SUPABASE_KEY || window.PO_SUPABASE_PUBLISHABLE_KEY || window.PO_SUPABASE_ANON_KEY || 'sb_publishable_2DwyJ4UfUV77ld5YeVYMXA_9a4vrvpB'
-  };
-
-  function loadExternalScript(src, timeoutMs = 8000) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      let finished = false;
-      const timer = setTimeout(() => {
-        if (finished) return;
-        finished = true;
-        script.remove();
-        reject(new Error(`Timeout ao carregar ${src}`));
-      }, timeoutMs);
-      script.src = src;
-      script.async = true;
-      script.onload = () => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        resolve();
-      };
-      script.onerror = () => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        script.remove();
-        reject(new Error(`Falha ao carregar ${src}`));
-      };
-      document.head.appendChild(script);
-    });
-  }
-
-  async function ensureSupabaseLibrary() {
-    if (window.supabase?.createClient) return true;
-    const sources = [
-      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-      'https://unpkg.com/@supabase/supabase-js@2'
-    ];
-    for (const src of sources) {
-      try {
-        await loadExternalScript(src);
-        if (window.supabase?.createClient) return true;
-      } catch (err) {
-        console.warn(err);
-      }
-    }
-    return false;
-  }
+  const cfg = window.PO_CONFIG || {};
 
   const authPage = $('authPage');
   const appPage = $('appPage');
@@ -86,7 +37,6 @@
   const responsible = $('responsible');
   const orderDate = $('orderDate');
   const estimatedReadyDate = $('estimatedReadyDate');
-  const actualReadyDate = $('actualReadyDate');
   const poStatus = $('poStatus');
   const notes = $('notes');
 
@@ -122,11 +72,6 @@
 
   const poView = $('poView');
   const quotesView = $('quotesView');
-  const processDataTab = $('processDataTab');
-  const processSheetTab = $('processSheetTab');
-  const processDataPanel = $('processDataPanel');
-  const processSheetPanel = $('processSheetPanel');
-  const processSheetRows = $('processSheetRows');
   const modeTabs = [...document.querySelectorAll('.mode-tab')];
   const quoteNavBadge = $('quoteNavBadge');
   const quoteSetup = $('quoteSetup');
@@ -176,7 +121,6 @@
   let loadingQuotes = false;
   let quotesTableAvailable = true;
   let activeMode = 'pos';
-  let modalOrderSnapshot = null;
 
   function showMessage(el, text, type = 'error') {
     el.textContent = text;
@@ -457,9 +401,9 @@
         <div class="origin-followup-box">
           <label class="origin-followup-check">
             <input type="checkbox" data-origin-followup-toggle data-id="${order.id}" ${editor ? '' : 'disabled'} />
-            <span>Notificado</span>
+            <span>Cobrado</span>
           </label>
-          <small class="origin-followup-meta">Ainda não notificado</small>
+          <small class="origin-followup-meta">Ainda não cobrado</small>
         </div>
       `;
     }
@@ -470,10 +414,10 @@
         <div class="origin-followup-box">
           <label class="origin-followup-check checked">
             <input type="checkbox" data-origin-followup-toggle data-id="${order.id}" checked ${editor ? '' : 'disabled'} />
-            <span>Notificado</span>
+            <span>Cobrado</span>
           </label>
           <span class="origin-followup-state waiting">Aguardando resposta</span>
-          ${sentAt ? `<small class="origin-followup-meta">Notificado em ${escapeHtml(formatDateTime(sentAt))}${elapsed ? ` • há ${escapeHtml(elapsed)}` : ''}</small>` : '<small class="origin-followup-meta">Notificação registrada pela FOLLOW UP</small>'}
+          ${sentAt ? `<small class="origin-followup-meta">Cobrado em ${escapeHtml(formatDateTime(sentAt))}${elapsed ? ` • há ${escapeHtml(elapsed)}` : ''}</small>` : '<small class="origin-followup-meta">Cobrança registrada pela FOLLOW UP</small>'}
           ${editor ? `<button type="button" class="origin-followup-action" data-action="origin-response" data-id="${order.id}">Resposta recebida</button>` : ''}
         </div>
       `;
@@ -483,11 +427,11 @@
       <div class="origin-followup-box">
         <label class="origin-followup-check checked">
           <input type="checkbox" data-origin-followup-toggle data-id="${order.id}" checked ${editor ? '' : 'disabled'} />
-          <span>Notificado</span>
+          <span>Cobrado</span>
         </label>
         <span class="origin-followup-state answered">Resposta recebida</span>
         <small class="origin-followup-meta">${answeredAt ? `Em ${escapeHtml(formatDateTime(answeredAt))}` : 'Resposta registrada'}</small>
-        ${editor ? `<button type="button" class="origin-followup-action" data-action="origin-recharge" data-id="${order.id}">Notificar novamente</button>` : ''}
+        ${editor ? `<button type="button" class="origin-followup-action" data-action="origin-recharge" data-id="${order.id}">Cobrar novamente</button>` : ''}
       </div>
     `;
   }
@@ -541,8 +485,6 @@
     orderDate.value = todayISO();
     poStatus.value = 'Aguardando resposta do fornecedor';
     modalTitle.textContent = 'Novo PO';
-    modalOrderSnapshot = order || null;
-    setProcessTab('data');
 
     if (order) {
       modalTitle.textContent = 'Editar PO';
@@ -555,7 +497,6 @@
       responsible.value = order.responsible || '';
       orderDate.value = order.order_date || '';
       estimatedReadyDate.value = order.estimated_ready_date || '';
-      actualReadyDate.value = order.actual_ready_date || '';
       poStatus.value = normalizeSystemStatus(order.status);
       notes.value = order.notes || '';
 
@@ -572,7 +513,6 @@
     }
 
     poModal.classList.remove('hidden');
-    renderProcessSheet();
     setTimeout(() => poNumber.focus(), 50);
   }
 
@@ -582,21 +522,12 @@
     hideMessage(formError);
     savePoBtn.disabled = false;
     savePoBtn.textContent = 'Salvar PO';
-    modalOrderSnapshot = null;
-    setProcessTab('data');
   }
 
-  function setProcessTab(tab = 'data') {
-    const sheet = tab === 'sheet';
-    processDataTab?.classList.toggle('active', !sheet);
-    processSheetTab?.classList.toggle('active', sheet);
-    processDataPanel?.classList.toggle('hidden', sheet);
-    processSheetPanel?.classList.toggle('hidden', !sheet);
-    if (sheet) renderProcessSheet();
-  }
+
 
   function showMode(mode) {
-    activeMode = ['pos', 'quotes'].includes(mode) ? mode : 'pos';
+    activeMode = mode === 'quotes' ? 'quotes' : 'pos';
     poView.classList.toggle('hidden', activeMode !== 'pos');
     quotesView.classList.toggle('hidden', activeMode !== 'quotes');
     modeTabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === activeMode));
@@ -844,7 +775,7 @@
     }
 
     if (!filtered.length) {
-      ordersBody.innerHTML = '<tr><td colspan="11" class="empty">Nenhum PO encontrado.</td></tr>';
+      ordersBody.innerHTML = '<tr><td colspan="10" class="empty">Nenhum PO encontrado.</td></tr>';
       return;
     }
 
@@ -858,7 +789,6 @@
           <td>${escapeHtml(o.supplier)}</td>
           <td>${escapeHtml(o.client || '—')}</td>
           <td>${formatDate(o.estimated_ready_date)}</td>
-          <td>${formatDate(o.actual_ready_date)}</td>
           <td>${escapeHtml(o.follow_up_status || o.status || '—')}</td>
           <td class="origin-followup-cell">${originFollowUpHtml(o)}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
@@ -888,205 +818,6 @@
     }).join('');
   }
 
-  function sheetSourceObject(order) {
-    const raw = order?.source_data;
-    if (!raw) return {};
-    if (typeof raw === 'object') return raw;
-    if (typeof raw === 'string') {
-      try { return JSON.parse(raw); } catch (_) { return {}; }
-    }
-    return {};
-  }
-
-  function sheetSourceCell(order, headers) {
-    const row = sheetSourceObject(order);
-    const list = Array.isArray(headers) ? headers : [headers];
-    for (const header of list) {
-      const value = getCell(row, header);
-      if (value !== null && value !== undefined && value !== '') return value;
-    }
-    return null;
-  }
-
-  function sheetText(value) {
-    if (value === null || value === undefined || value === '' || value === '-') return '—';
-    return String(value).trim() || '—';
-  }
-
-  function sheetMoney(value, currencyCode = '') {
-    const n = typeof value === 'number' ? value : parsePtBrNumber(value);
-    if (!Number.isFinite(n)) return '—';
-    const formatted = new Intl.NumberFormat('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(n);
-    return currencyCode ? `${formatted} ${currencyCode}` : formatted;
-  }
-
-  function sheetDate(value, fallbackIso = null) {
-    if (fallbackIso) return formatDate(fallbackIso);
-    const iso = excelDateToISO(value);
-    return iso ? formatDate(iso) : sheetText(value);
-  }
-
-  function sheetProfit(order) {
-    const sourceProfit = sheetSourceCell(order, ['Profit']);
-    const rawProfit = parsePtBrNumber(sourceProfit);
-    if (Number.isFinite(rawProfit)) return rawProfit;
-    const amount = Number(order.amount_po);
-    const supplierValue = Number(order.supplier_price);
-    if (!Number.isFinite(amount) || !Number.isFinite(supplierValue)) return null;
-    return amount - supplierValue;
-  }
-
-  function sheetProfitPercent(order, profit) {
-    const sourcePercent = sheetSourceCell(order, ['Profit %', 'Profit%']);
-    if (sourcePercent !== null && sourcePercent !== undefined && sourcePercent !== '') {
-      const n = parsePtBrNumber(String(sourcePercent).replace('%', ''));
-      if (Number.isFinite(n)) return n;
-    }
-    const supplierValue = Number(order.supplier_price);
-    if (!Number.isFinite(profit) || !Number.isFinite(supplierValue) || supplierValue === 0) return null;
-    return (profit / supplierValue) * 100;
-  }
-
-  function spreadsheetRowValues(order) {
-    const profit = sheetProfit(order);
-    const profitPercent = sheetProfitPercent(order, profit);
-    const currencyCode = sheetText(order.currency || sheetSourceCell(order, ['Sales']));
-    return {
-      no: order.source_no ?? sheetSourceCell(order, ['NO.', 'NO']),
-      customer: order.client || sheetSourceCell(order, ['Customer']),
-      po: order.po_number || sheetSourceCell(order, ['Purchase Order']),
-      zpmc: sheetSourceCell(order, ['ZPMC']),
-      supplier: order.supplier || sheetSourceCell(order, ['Supplier']),
-      amount: order.amount_po ?? sheetSourceCell(order, ['Amount of PO']),
-      supplierPrice: order.supplier_price ?? sheetSourceCell(order, ['Supplier Price']),
-      profit,
-      profitPercent,
-      supplierQuotation: order.supplier_quotation_no || sheetSourceCell(order, ['Supplier Quotation nº', 'Supplier Quotation n°', 'Supplier Quotation no']),
-      sales: order.currency || sheetSourceCell(order, ['Sales']),
-      quotation: order.quotation_no || sheetSourceCell(order, ['Quotation NO.', 'Quotation NO']),
-      workOrder: order.work_order || sheetSourceCell(order, ['Work Order']),
-      sapPosting: sheetSourceCell(order, ['SAP - POSTING NUMBER', 'SAP - POSTING NUMBER.']),
-      sapPicking: sheetSourceCell(order, ['SAP - PICKING NUMBER', 'SAP - PICKING NUMBER.']),
-      lspConsulted: order.lsp_consulted || sheetSourceCell(order, ['LSP Consulted']),
-      tracking: sheetSourceCell(order, ['Tracking (LSP)', 'Tracking']),
-      poReceivedRaw: sheetSourceCell(order, ['PO Received']),
-      poProcessingRaw: sheetSourceCell(order, ['PO Processing Date']),
-      etdRaw: sheetSourceCell(order, ['ETD (Promised delivery time)', 'Promised delivery time Quotation']),
-      actualReady: order.actual_ready_date || null,
-      transportation: order.transportation || sheetSourceCell(order, ['Transportation']),
-      currencyCode: currencyCode === '—' ? '' : currencyCode
-    };
-  }
-
-  function processSheetOrderFromForm() {
-    const existing = modalOrderSnapshot || (poId?.value ? orders.find((o) => o.id === poId.value) : null) || {};
-    return {
-      ...existing,
-      po_number: poNumber?.value?.trim() || existing.po_number || '',
-      supplier: supplier?.value?.trim() || existing.supplier || '',
-      client: client?.value?.trim() || existing.client || '',
-      origin: poOrigin?.value?.trim() || existing.origin || '',
-      incoterm: incoterm?.value || existing.incoterm || '',
-      responsible: responsible?.value?.trim() || existing.responsible || '',
-      order_date: orderDate?.value || existing.order_date || null,
-      estimated_ready_date: estimatedReadyDate?.value || existing.estimated_ready_date || null,
-      actual_ready_date: actualReadyDate?.value || existing.actual_ready_date || null,
-      currency: currency?.value?.trim() || existing.currency || '',
-      transportation: transportation?.value?.trim() || existing.transportation || '',
-      amount_po: optionalNumber(amountPo) ?? existing.amount_po ?? null,
-      supplier_quotation_no: supplierQuotationNo?.value?.trim() || existing.supplier_quotation_no || '',
-      supplier_price: optionalNumber(supplierPrice) ?? existing.supplier_price ?? null,
-      quotation_no: quotationNo?.value?.trim() || existing.quotation_no || '',
-      work_order: workOrder?.value?.trim() || existing.work_order || '',
-      lsp_consulted: lspConsulted?.value?.trim() || existing.lsp_consulted || ''
-    };
-  }
-
-  function renderProcessSheet() {
-    if (!processSheetRows) return;
-    const order = processSheetOrderFromForm();
-    const v = spreadsheetRowValues(order);
-    processSheetRows.innerHTML = `
-      <tr>
-        <td>${escapeHtml(sheetText(v.no))}</td>
-        <td>${escapeHtml(sheetText(v.customer))}</td>
-        <td>${escapeHtml(sheetText(v.po))}</td>
-        <td>${escapeHtml(sheetText(v.zpmc))}</td>
-        <td>${escapeHtml(sheetText(v.supplier))}</td>
-        <td class="sheet-number">${escapeHtml(sheetMoney(v.amount))}</td>
-        <td class="sheet-number">${escapeHtml(sheetMoney(v.supplierPrice))}</td>
-        <td class="sheet-number">${escapeHtml(sheetMoney(v.profit))}</td>
-        <td class="sheet-number">${Number.isFinite(v.profitPercent) ? `${escapeHtml(formatPtBrNumber(v.profitPercent))}%` : '—'}</td>
-        <td>${escapeHtml(sheetText(v.supplierQuotation))}</td>
-        <td>${escapeHtml(sheetText(v.sales))}</td>
-        <td>${escapeHtml(sheetText(v.quotation))}</td>
-        <td>${escapeHtml(sheetText(v.workOrder))}</td>
-        <td>${escapeHtml(sheetText(v.sapPosting))}</td>
-        <td>${escapeHtml(sheetText(v.sapPicking))}</td>
-        <td>${escapeHtml(sheetText(v.lspConsulted))}</td>
-        <td>${escapeHtml(sheetText(v.tracking))}</td>
-        <td>${escapeHtml(sheetDate(v.poReceivedRaw))}</td>
-        <td>${escapeHtml(sheetDate(v.poProcessingRaw, order.order_date))}</td>
-        <td>${escapeHtml(sheetDate(v.etdRaw, order.estimated_ready_date))}</td>
-        <td>${escapeHtml(order.actual_ready_date ? formatDate(order.actual_ready_date) : '—')}</td>
-        <td>${escapeHtml(sheetText(v.transportation))}</td>
-      </tr>`;
-  }
-
-  function renderSpreadsheet() {
-    if (!sheetRows) return;
-    const search = String(sheetSearch?.value || '').trim().toLowerCase();
-    const rows = orders
-      .map((order) => ({ order, values: spreadsheetRowValues(order) }))
-      .filter(({ values }) => {
-        if (!search) return true;
-        return Object.values(values).some((value) => String(value ?? '').toLowerCase().includes(search));
-      })
-      .sort((a, b) => {
-        const an = Number(a.values.no);
-        const bn = Number(b.values.no);
-        if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
-        return String(a.values.po || '').localeCompare(String(b.values.po || ''));
-      });
-
-    if (sheetCount) sheetCount.textContent = rows.length;
-    if (!rows.length) {
-      sheetRows.innerHTML = '<tr><td colspan="21" class="empty">Nenhum registro encontrado.</td></tr>';
-      return;
-    }
-
-    sheetRows.innerHTML = rows.map(({ order, values: v }) => `
-      <tr data-sheet-po-id="${order.id}">
-        <td>${escapeHtml(sheetText(v.no))}</td>
-        <td>${escapeHtml(sheetText(v.customer))}</td>
-        <td>${canEdit()
-          ? `<button type="button" class="sheet-po-link" data-sheet-edit="${order.id}">${escapeHtml(sheetText(v.po))}</button>`
-          : escapeHtml(sheetText(v.po))}</td>
-        <td>${escapeHtml(sheetText(v.zpmc))}</td>
-        <td>${escapeHtml(sheetText(v.supplier))}</td>
-        <td class="sheet-number">${escapeHtml(sheetMoney(v.amount))}</td>
-        <td class="sheet-number">${escapeHtml(sheetMoney(v.supplierPrice))}</td>
-        <td class="sheet-number">${escapeHtml(sheetMoney(v.profit))}</td>
-        <td class="sheet-number">${Number.isFinite(v.profitPercent) ? `${escapeHtml(formatPtBrNumber(v.profitPercent))}%` : '—'}</td>
-        <td>${escapeHtml(sheetText(v.supplierQuotation))}</td>
-        <td>${escapeHtml(sheetText(v.sales))}</td>
-        <td>${escapeHtml(sheetText(v.quotation))}</td>
-        <td>${escapeHtml(sheetText(v.workOrder))}</td>
-        <td>${escapeHtml(sheetText(v.sapPosting))}</td>
-        <td>${escapeHtml(sheetText(v.sapPicking))}</td>
-        <td>${escapeHtml(sheetText(v.lspConsulted))}</td>
-        <td>${escapeHtml(sheetText(v.tracking))}</td>
-        <td>${escapeHtml(sheetDate(v.poReceivedRaw))}</td>
-        <td>${escapeHtml(sheetDate(v.poProcessingRaw, order.order_date))}</td>
-        <td>${escapeHtml(sheetDate(v.etdRaw, order.estimated_ready_date))}</td>
-        <td>${escapeHtml(sheetText(v.transportation))}</td>
-      </tr>
-    `).join('');
-  }
-
   function render() {
     renderMetrics();
     renderOrderAgeSummary();
@@ -1099,7 +830,6 @@
     sessionStorage.removeItem('po_access_mode');
     hideMessage(authMessage);
     const email = normalizedEmail(authEmail.value);
-
     if (!email || !authPassword.value) {
       showMessage(authMessage, 'Preencha e-mail e senha.');
       return;
@@ -1108,42 +838,23 @@
       showMessage(authMessage, 'Este e-mail não possui acesso de edição. Use o Modo espectador.');
       return;
     }
-    if (!db?.auth) {
-      showMessage(authMessage, 'Supabase ainda não inicializou. Aguarde alguns segundos e tente novamente. Se persistir, a biblioteca externa está bloqueada pela rede.');
-      return;
-    }
 
     loginBtn.disabled = true;
     loginBtn.textContent = 'Entrando...';
+    const { data, error } = await db.auth.signInWithPassword({
+      email,
+      password: authPassword.value
+    });
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Entrar';
 
-    try {
-      const loginPromise = db.auth.signInWithPassword({
-        email,
-        password: authPassword.value
-      });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Tempo limite excedido ao conectar com o Supabase.')), 15000)
-      );
-      const { data, error } = await Promise.race([loginPromise, timeoutPromise]);
-
-      if (error) {
-        showMessage(authMessage, error.message);
-        return;
-      }
-      if (data?.user && !isEditorEmail(data.user.email)) {
-        await db.auth.signOut();
-        showMessage(authMessage, 'Usuário sem permissão de edição.');
-        return;
-      }
-      if (!data?.user) {
-        showMessage(authMessage, 'Login não retornou um usuário. Tente novamente.');
-      }
-    } catch (err) {
-      console.error('Erro no login:', err);
-      showMessage(authMessage, err?.message || 'Erro inesperado ao entrar.');
-    } finally {
-      loginBtn.disabled = false;
-      loginBtn.textContent = 'Entrar';
+    if (error) {
+      showMessage(authMessage, error.message);
+      return;
+    }
+    if (data?.user && !isEditorEmail(data.user.email)) {
+      await db.auth.signOut();
+      showMessage(authMessage, 'Usuário sem permissão de edição.');
     }
   }
 
@@ -1190,7 +901,6 @@
       responsible: responsible.value.trim() || null,
       order_date: orderDate.value || null,
       estimated_ready_date: estimatedReadyDate.value || null,
-      actual_ready_date: actualReadyDate.value || null,
       status: newStatus,
       notes: notes.value.trim() || null,
       currency: currency.value.trim() || null,
@@ -1313,12 +1023,12 @@
       .eq('id', id);
 
     if (error) {
-      showToast(`Erro ao atualizar notificação da origem: ${error.message}`, true, 6500);
+      showToast(`Erro ao atualizar cobrança da origem: ${error.message}`, true, 6500);
       renderTable();
       return;
     }
 
-    showToast(checked ? 'Origem marcada como notificada. Agora está aguardando resposta.' : 'Notificação desmarcada.');
+    showToast(checked ? 'Cobrança marcada. Agora está aguardando resposta da origem.' : 'Cobrança desmarcada.');
     await loadOrders(true);
   }
 
@@ -1327,7 +1037,7 @@
     const order = orders.find((o) => o.id === id);
     if (!order) return;
     if (!order.origin_followup_sent) {
-      showToast('Marque primeiro que a origem já foi notificada.', true, 5000);
+      showToast('Marque primeiro que a origem já foi cobrada.', true, 5000);
       return;
     }
 
@@ -1360,11 +1070,11 @@
       .eq('id', id);
 
     if (error) {
-      showToast(`Erro ao registrar nova notificação: ${error.message}`, true, 6500);
+      showToast(`Erro ao registrar nova cobrança: ${error.message}`, true, 6500);
       return;
     }
 
-    showToast('Nova notificação registrada. Aguardando resposta da origem.');
+    showToast('Nova cobrança registrada. Aguardando resposta da origem.');
     await loadOrders(true);
   }
 
@@ -1707,7 +1417,7 @@
         .from('purchase_orders')
         .select(`
           id,user_id,source_no,po_number,import_fingerprint,import_source,
-          supplier,client,incoterm,order_date,estimated_ready_date,actual_ready_date,
+          supplier,client,incoterm,order_date,estimated_ready_date,
           currency,transportation,amount_po,supplier_quotation_no,supplier_price,
           quotation_no,work_order,lsp_consulted,follow_up_status,hidden_status,
           status,completed_at,supplier_sent_at,supplier_confirmed_at,
@@ -2105,40 +1815,20 @@
 
   async function init() {
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
-      showMessage(authMessage, 'Configuração do Supabase ausente/incompatível em config.js.');
+      showMessage(authMessage, 'Configuração do Supabase ausente em config.js.');
       loginBtn.disabled = true;
+      viewerBtn.disabled = true;
       return;
     }
 
-    const supabaseReady = await ensureSupabaseLibrary();
-    if (!supabaseReady) {
-      showMessage(authMessage, 'Não foi possível carregar a biblioteca do Supabase. Verifique a internet/rede corporativa e atualize a página.');
-      loginBtn.disabled = false;
+    if (!window.supabase || !window.supabase.createClient) {
+      showMessage(authMessage, 'Não foi possível carregar a biblioteca do Supabase. Verifique sua conexão com a internet.');
       return;
     }
 
-    try {
-      db = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
-    } catch (err) {
-      console.error('Erro ao criar cliente Supabase:', err);
-      showMessage(authMessage, 'Falha ao inicializar o Supabase: ' + (err?.message || err));
-      loginBtn.disabled = true;
-      return;
-    }
+    db = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
 
-    let data = null;
-    let error = null;
-    try {
-      const result = await Promise.race([
-        db.auth.getSession(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite ao carregar a sessão.')), 12000))
-      ]);
-      data = result?.data || null;
-      error = result?.error || null;
-    } catch (err) {
-      console.warn('Não foi possível restaurar a sessão:', err);
-      showMessage(authMessage, err?.message || 'Não foi possível restaurar a sessão. Faça login novamente.');
-    }
+    const { data, error } = await db.auth.getSession();
     if (error) showMessage(authMessage, error.message);
     const initialUser = data?.session?.user || null;
     if (initialUser && isEditorEmail(initialUser.email)) {
@@ -2220,19 +1910,6 @@
     if (!document.hidden && canRead()) { loadOrders(true); loadQuotes(true); }
   });
 
-
-  sheetSearch?.addEventListener('input', renderSpreadsheet);
-  sheetRefreshBtn?.addEventListener('click', () => loadOrders());
-  sheetImportBtn?.addEventListener('click', () => {
-    if (!requireEditor()) return;
-    excelFileInput.click();
-  });
-  sheetRows?.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-sheet-edit]');
-    if (!button || !canEdit()) return;
-    const order = orders.find((o) => o.id === button.dataset.sheetEdit);
-    if (order) openModal(order);
-  });
 
   modeTabs.forEach((btn) => btn.addEventListener('click', () => showMode(btn.dataset.mode)));
   newQuoteBtn?.addEventListener('click', () => openQuoteModal());
