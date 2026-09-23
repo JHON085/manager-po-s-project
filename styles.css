@@ -667,3 +667,109 @@ tbody tr:has(.po-row-menu[open]) { position:relative; z-index:70; }
   }
   .quick-complete-btn { padding: 7px 9px; font-size: 12px; }
 }
+
+
+/* ===== v6.4 - tabela de POs com colunas travadas ===== */
+/*
+   As larguras abaixo são deliberadamente fixas. Ao aumentar o zoom ou reduzir
+   a janela, a tabela NÃO encolhe e NÃO sobrepõe colunas: a rolagem horizontal
+   do .table-wrap assume o espaço excedente.
+*/
+#poOrdersTable.po-orders-table {
+  table-layout: fixed !important;
+  width: 1620px !important;
+  min-width: 1620px !important;
+  max-width: none !important;
+  border-collapse: collapse;
+}
+
+#poOrdersTable col.col-po           { width: 135px; }
+#poOrdersTable col.col-supplier     { width: 150px; }
+#poOrdersTable col.col-client       { width: 145px; }
+#poOrdersTable col.col-estimate     { width: 112px; }
+#poOrdersTable col.col-ready        { width: 112px; }
+#poOrdersTable col.col-followup     { width: 155px; }
+#poOrdersTable col.col-origin       { width: 195px; }
+#poOrdersTable col.col-situation    { width: 135px; }
+#poOrdersTable col.col-status       { width: 125px; }
+#poOrdersTable col.col-confirmation { width: 190px; }
+#poOrdersTable col.col-actions      { width: 166px; }
+
+#poOrdersTable th,
+#poOrdersTable td {
+  box-sizing: border-box;
+  min-width: 0 !important;
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* Controles/badges não podem invadir a célula vizinha. */
+#poOrdersTable .badge,
+#poOrdersTable .origin-followup-box,
+#poOrdersTable .supplier-timer,
+#poOrdersTable .supplier-timer-meta,
+#poOrdersTable .actions {
+  max-width: 100%;
+}
+
+#poOrdersTable .badge {
+  white-space: normal;
+  text-align: center;
+  justify-content: center;
+}
+
+/* Ações fazem parte do fluxo normal da tabela; nada fica sobre outra coluna. */
+#poOrdersTable .actions-header,
+#poOrdersTable .actions-cell {
+  position: static !important;
+  right: auto !important;
+  left: auto !important;
+  z-index: auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+#poOrdersTable .actions-compact {
+  width: 100%;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 7px;
+}
+
+#poOrdersTable .quick-complete-btn {
+  flex: 0 0 auto;
+}
+
+#poOrdersTable .po-row-menu {
+  flex: 0 0 auto;
+}
+
+/* Mantém o menu acima das linhas, mas sem transformar a coluna em sticky. */
+#poOrdersTable tbody tr:has(.po-row-menu[open]) {
+  position: relative;
+  z-index: 70;
+}
+
+#poOrdersTable .po-row-menu[open] {
+  position: relative;
+  z-index: 90;
+}
+
+#poOrdersTable .po-row-menu-popover {
+  z-index: 100;
+}
+
+/* Em qualquer zoom/tela, mantém as mesmas larguras e apenas rola horizontalmente. */
+.table-wrap {
+  overflow-x: auto !important;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
