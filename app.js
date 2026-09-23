@@ -2,7 +2,10 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const cfg = window.PO_CONFIG || {};
+  const cfg = window.PO_CONFIG || {
+    SUPABASE_URL: window.PO_SUPABASE_URL || '',
+    SUPABASE_KEY: window.PO_SUPABASE_PUBLISHABLE_KEY || window.PO_SUPABASE_ANON_KEY || ''
+  };
 
   const authPage = $('authPage');
   const appPage = $('appPage');
@@ -1050,6 +1053,7 @@
     sessionStorage.removeItem('po_access_mode');
     hideMessage(authMessage);
     const email = normalizedEmail(authEmail.value);
+
     if (!email || !authPassword.value) {
       showMessage(authMessage, 'Preencha e-mail e senha.');
       return;
@@ -1058,23 +1062,42 @@
       showMessage(authMessage, 'Este e-mail não possui acesso de edição. Use o Modo espectador.');
       return;
     }
+    if (!db?.auth) {
+      showMessage(authMessage, 'Supabase não inicializou. Confira o config.js e atualize a página.');
+      return;
+    }
 
     loginBtn.disabled = true;
     loginBtn.textContent = 'Entrando...';
-    const { data, error } = await db.auth.signInWithPassword({
-      email,
-      password: authPassword.value
-    });
-    loginBtn.disabled = false;
-    loginBtn.textContent = 'Entrar';
 
-    if (error) {
-      showMessage(authMessage, error.message);
-      return;
-    }
-    if (data?.user && !isEditorEmail(data.user.email)) {
-      await db.auth.signOut();
-      showMessage(authMessage, 'Usuário sem permissão de edição.');
+    try {
+      const loginPromise = db.auth.signInWithPassword({
+        email,
+        password: authPassword.value
+      });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Tempo limite excedido ao conectar com o Supabase.')), 15000)
+      );
+      const { data, error } = await Promise.race([loginPromise, timeoutPromise]);
+
+      if (error) {
+        showMessage(authMessage, error.message);
+        return;
+      }
+      if (data?.user && !isEditorEmail(data.user.email)) {
+        await db.auth.signOut();
+        showMessage(authMessage, 'Usuário sem permissão de edição.');
+        return;
+      }
+      if (!data?.user) {
+        showMessage(authMessage, 'Login não retornou um usuário. Tente novamente.');
+      }
+    } catch (err) {
+      console.error('Erro no login:', err);
+      showMessage(authMessage, err?.message || 'Erro inesperado ao entrar.');
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Entrar';
     }
   }
 
@@ -2036,20 +2059,39 @@
 
   async function init() {
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
-      showMessage(authMessage, 'Configuração do Supabase ausente em config.js.');
+      showMessage(authMessage, 'Configuração do Supabase ausente/incompatível em config.js.');
       loginBtn.disabled = true;
-      viewerBtn.disabled = true;
       return;
     }
 
     if (!window.supabase || !window.supabase.createClient) {
-      showMessage(authMessage, 'Não foi possível carregar a biblioteca do Supabase. Verifique sua conexão com a internet.');
+      showMessage(authMessage, 'Biblioteca do Supabase não carregou. Atualize a página ou verifique a conexão.');
+      loginBtn.disabled = true;
       return;
     }
 
-    db = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+    try {
+      db = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+    } catch (err) {
+      console.error('Erro ao criar cliente Supabase:', err);
+      showMessage(authMessage, 'Falha ao inicializar o Supabase: ' + (err?.message || err));
+      loginBtn.disabled = true;
+      return;
+    }
 
-    const { data, error } = await db.auth.getSession();
+    let data = null;
+    let error = null;
+    try {
+      const result = await Promise.race([
+        db.auth.getSession(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite ao carregar a sessão.')), 12000))
+      ]);
+      data = result?.data || null;
+      error = result?.error || null;
+    } catch (err) {
+      console.warn('Não foi possível restaurar a sessão:', err);
+      showMessage(authMessage, err?.message || 'Não foi possível restaurar a sessão. Faça login novamente.');
+    }
     if (error) showMessage(authMessage, error.message);
     const initialUser = data?.session?.user || null;
     if (initialUser && isEditorEmail(initialUser.email)) {
