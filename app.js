@@ -167,6 +167,7 @@
   ]);
 
   let db = null;
+  let authListenerInitialized = false;
   let currentUser = null;
   let accessMode = 'signed_out'; // signed_out | editor | viewer
   let orders = [];
@@ -1045,8 +1046,18 @@
       return;
     }
     if (!db?.auth) {
-      showMessage(authMessage, 'Supabase ainda não inicializou. Aguarde alguns segundos e tente novamente. Se persistir, a biblioteca externa está bloqueada pela rede.');
-      return;
+      showMessage(authMessage, 'Conectando ao Supabase...');
+      try {
+        if (await ensureSupabaseLibrary()) {
+          db = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+        }
+      } catch (err) {
+        console.error('Falha ao reconectar ao Supabase:', err);
+      }
+      if (!db?.auth) {
+        showMessage(authMessage, 'O Supabase não foi carregado. Confirme que o deploy gerou vendor.js e config.js. Na Vercel, veja Deployment > Build Logs.');
+        return;
+      }
     }
 
     loginBtn.disabled = true;
@@ -1073,6 +1084,9 @@
       }
       if (!data?.user) {
         showMessage(authMessage, 'Login não retornou um usuário. Tente novamente.');
+      } else if (!authListenerInitialized) {
+        // Mesmo que a primeira inicialização tenha falhado, o login recuperado deve entrar.
+        setAccessView(data.user, 'editor');
       }
     } catch (err) {
       console.error('Erro no login:', err);
@@ -1086,7 +1100,11 @@
   async function enterViewerMode() {
     hideMessage(authMessage);
     sessionStorage.setItem('po_access_mode', 'viewer');
-    try { await db.auth.signOut(); } catch (_) {}
+    try { if (db?.auth) await db.auth.signOut(); } catch (_) {}
+    if (!db?.auth) {
+      showMessage(authMessage, 'Supabase indisponível: confira o arquivo vendor.js publicado.');
+      return;
+    }
     setAccessView(null, 'viewer');
   }
 
@@ -2122,7 +2140,7 @@
 
     const supabaseReady = await ensureSupabaseLibrary();
     if (!supabaseReady) {
-      showMessage(authMessage, 'Não foi possível carregar a biblioteca do Supabase. Verifique a internet/rede corporativa e atualize a página.');
+      showMessage(authMessage, 'Não foi possível carregar o Supabase. Confira se /vendor.js existe no seu site; verifique também o Build Logs da Vercel.');
       loginBtn.disabled = false;
       return;
     }
@@ -2171,6 +2189,7 @@
         setAccessView(null, 'signed_out');
       }
     });
+    authListenerInitialized = true;
   }
 
   authForm.addEventListener('submit', handleLogin);
