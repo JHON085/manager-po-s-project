@@ -729,3 +729,143 @@ tbody tr:has(.po-row-menu[open]) { position:relative; z-index:70; }
 .email-fields textarea { min-height:240px; font:14px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .email-actions { flex-wrap:wrap; }
 @media (max-width:650px) { .email-actions .btn { flex:1; } }
+
+
+/* ===== Correcao de esquadro - 15/10/2026 (layout v6.9.1) =====
+   Apenas visual: nenhuma alteracao em login, POs, status ou Supabase. */
+@media (min-width: 901px) {
+  .container {
+    max-width: 1920px;
+    width: 100%;
+    padding-left: clamp(16px, 2.1vw, 32px);
+    padding-right: clamp(16px, 2.1vw, 32px);
+  }
+}
+
+/* Nao espremer o titulo com cinco filtros na mesma linha. */
+#poView > .panel > .panel-head {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 16px 18px 14px;
+}
+#poView > .panel > .panel-head h3 { margin: 0; }
+#poView > .panel > .panel-head .filters {
+  display: grid;
+  grid-template-columns: minmax(180px,1.4fr) minmax(190px,1.25fr) repeat(3,minmax(136px,1fr));
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+}
+#poView > .panel > .panel-head .filters > * {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+}
+/* Dica discreta, pois nem todas as colunas cabem em 1280px. */
+#poView > .panel > .panel-head::after {
+  content: 'Para ver todas as colunas, role a tabela horizontalmente  →';
+  display: block;
+  color: #737b8d;
+  font-size: 11px;
+  line-height: 1.35;
+  padding-top: 1px;
+}
+@media (min-width: 1650px) {
+  #poView > .panel > .panel-head::after { display: none; }
+}
+
+/* Rolagem pertence a tabela, nao a pagina nem ao cartao. */
+#poView > .panel > .table-wrap {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto !important;
+  overflow-y: auto;
+  scrollbar-width: auto;
+  scrollbar-color: #adb6c6 #f0f2f5;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+#poView > .panel > .table-wrap::-webkit-scrollbar { height: 12px; }
+#poView > .panel > .table-wrap::-webkit-scrollbar-track { background:#f0f2f5; }
+#poView > .panel > .table-wrap::-webkit-scrollbar-thumb { background:#aeb8c7; border:2px solid #f0f2f5; border-radius:10px; }
+
+/* Todas as larguras somam 1520px: cabem em telas grandes;
+   nos notebooks, aparecem sem invadir as outras celulas. */
+#poView > .panel > .table-wrap > table {
+  width: 100% !important;
+  min-width: 1520px !important;
+  max-width: none !important;
+  table-layout: fixed !important;
+  margin: 0;
+}
+#poView > .panel > .table-wrap > table th,
+#poView > .panel > .table-wrap > table td {
+  box-sizing: border-box;
+  vertical-align: middle;
+  padding: 12px 10px;
+  overflow-wrap: anywhere;
+}
+#poView > .panel > .table-wrap > table th {
+  white-space: normal;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--border);
+}
+#poView > .panel > .table-wrap > table th:nth-child(1),
+#poView > .panel > .table-wrap > table td:nth-child(1) { width:115px; }
+#poView > .panel > .table-wrap > table th:nth-child(2),
+#poView > .panel > .table-wrap > table td:nth-child(2) { width:130px; }
+#poView > .panel > .table-wrap > table th:nth-child(3),
+#poView > .panel > .table-wrap > table td:nth-child(3) { width:125px; }
+#poView > .panel > .table-wrap > table th:nth-child(4),
+#poView > .panel > .table-wrap > table td:nth-child(4) { width:105px; }
+#poView > .panel > .table-wrap > table th:nth-child(5),
+#poView > .panel > .table-wrap > table td:nth-child(5) { width:105px; }
+#poView > .panel > .table-wrap > table th:nth-child(6),
+#poView > .panel > .table-wrap > table td:nth-child(6) { width:160px; }
+#poView > .panel > .table-wrap > table th:nth-child(7),
+#poView > .panel > .table-wrap > table td:nth-child(7) { width:190px; }
+#poView > .panel > .table-wrap > table th:nth-child(8),
+#poView > .panel > .table-wrap > table td:nth-child(8) { width:135px; }
+#poView > .panel > .table-wrap > table th:nth-child(9),
+#poView > .panel > .table-wrap > table td:nth-child(9) { width:130px; }
+#poView > .panel > .table-wrap > table th:nth-child(10),
+#poView > .panel > .table-wrap > table td:nth-child(10) { width:160px; }
+#poView > .panel > .table-wrap > table th:nth-child(11),
+#poView > .panel > .table-wrap > table td:nth-child(11) { width:165px; }
+
+#poView > .panel > .table-wrap > table td:nth-child(1),
+#poView > .panel > .table-wrap > table td:nth-child(4),
+#poView > .panel > .table-wrap > table td:nth-child(5) { white-space: nowrap; }
+#poView .origin-followup-cell { min-width: 0; }
+#poView .origin-followup-box { gap: 5px; }
+#poView .actions-header,
+#poView .actions-cell {
+  width: 165px !important;
+  min-width: 165px !important;
+  max-width: 165px !important;
+  position: static !important;
+  box-shadow: none !important;
+}
+#poView .actions-cell { overflow: visible !important; }
+
+@media (max-width: 1110px) {
+  #poView > .panel > .panel-head .filters {
+    grid-template-columns: repeat(3, minmax(0,1fr));
+  }
+  #poView > .panel > .panel-head .filters > input:first-child {
+    grid-column: span 2;
+  }
+}
+@media (max-width: 680px) {
+  #poView > .panel > .panel-head { padding: 14px 12px 11px; }
+  #poView > .panel > .panel-head .filters { grid-template-columns: repeat(2,minmax(0,1fr)); gap:8px; }
+  #poView > .panel > .panel-head .filters > input:first-child { grid-column: span 2; }
+  #poView > .panel > .panel-head .filters > select:last-child { grid-column: span 2; }
+  #poView > .panel > .table-wrap > table th,
+  #poView > .panel > .table-wrap > table td { padding: 10px 8px; }
+}
