@@ -1,0 +1,17 @@
+{
+  "name": "po-control-zpmc",
+  "version": "6.9.1",
+  "private": true,
+  "description": "PO Control - Vercel static build com dependencias locais",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.81.1",
+    "xlsx": "0.18.5",
+    "esbuild": "0.25.12"
+  }
+}
