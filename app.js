@@ -128,6 +128,9 @@
   const orderEmailCc = $('orderEmailCc');
   const orderEmailSubject = $('orderEmailSubject');
   const orderEmailBody = $('orderEmailBody');
+  const orderEmailTemplate = $('orderEmailTemplate');
+  const orderEmailTemplateHint = $('orderEmailTemplateHint');
+  let currentEmailOrder = null;
 
 
   const poView = $('poView');
@@ -541,6 +544,15 @@
     return 'Em produção';
   }
 
+  // O Supabase das versões anteriores aceita "Fatura pendente", mas não
+  // necessariamente a nova descrição. Mantemos o texto unificado na interface
+  // e usamos o valor legado ao gravar, sem exigir migração SQL.
+  function statusForDatabase(status) {
+    return normalizeSystemStatus(status) === 'Fatura e documentos pendentes'
+      ? 'Fatura pendente'
+      : normalizeSystemStatus(status);
+  }
+
   function statusDisplay(status) {
     const normalized = normalizeSystemStatus(status);
     return normalized === 'Cancelado' ? 'Cancelada' : normalized;
@@ -731,7 +743,7 @@
         data.push(...(page || []));
         if (!page || page.length < pageSize) break;
       }
-      orders = data.map((row) => ({ ...row, status: normalizeSystemStatus(row.status) }));
+      orders = data.map((row) => ({ ...row, _dbStatus: row.status, status: normalizeSystemStatus(row.status) }));
       const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSync(`Sincronizado • ${time}`);
       render();
@@ -847,7 +859,7 @@
                 <summary title="Mais ações" aria-label="Mais ações para a PO ${escapeHtml(o.po_number)}">•••</summary>
                 <div class="po-row-menu-popover">
                   <button type="button" class="po-menu-option" data-action="edit" data-id="${o.id}">Editar PO</button>
-                  ${!['Concluído','Cancelado'].includes(normalizedStatus) ? `<button type="button" class="po-menu-option" data-action="order-email" data-id="${o.id}">Criar e-mail de início</button>` : ''}
+                  ${!['Concluído','Cancelado'].includes(normalizedStatus) ? `<button type="button" class="po-menu-option" data-action="order-email" data-id="${o.id}">Criar e-mail de acompanhamento</button>` : ''}
                   ${normalizedStatus === 'Aguardando resposta do fornecedor' && !o.supplier_sent_at ? `<button type="button" class="po-menu-option" data-action="supplier-start" data-id="${o.id}">PO enviada</button>` : ''}
                   ${normalizedStatus === 'Aguardando resposta do fornecedor' && o.supplier_sent_at && !o.supplier_confirmed_at ? `<button type="button" class="po-menu-option" data-action="supplier-confirm" data-id="${o.id}">Fornecedor confirmou</button>` : ''}
                   ${canAdvance ? `<button type="button" class="po-menu-option" data-action="advance" data-id="${o.id}">Avançar para: ${escapeHtml(nextStatus)}</button>` : ''}
@@ -1204,7 +1216,7 @@
       order_date: orderDate.value || null,
       estimated_ready_date: estimatedReadyDate.value || null,
       actual_ready_date: actualReadyDate.value || null,
-      status: newStatus,
+      status: statusForDatabase(newStatus),
       notes: notes.value.trim() || null,
       currency: currency.value.trim() || null,
       transportation: transportation.value.trim() || null,
@@ -1283,15 +1295,15 @@
     const order = orders.find((o) => o.id === id);
     if (!order) return;
     const current = normalizeSystemStatus(order.status);
-    if (!['Em produção'].includes(current)) {
+    if (current !== 'Em produção') {
       showToast('Esta etapa precisa ser atualizada no formulário ou pela confirmação do fornecedor.', true);
       return;
     }
     const next = PO_STAGES[PO_STAGES.indexOf(current) + 1];
     if (!confirm(`Avançar PO ${order.po_number} de "${current}" para "${next}"?`)) return;
     const { data, error } = await db.from('purchase_orders')
-      .update({ status: next })
-      .eq('id', id).eq('status', current).select('id');
+      .update({ status: statusForDatabase(next) })
+      .eq('id', id).eq('status', order._dbStatus || order.status).select('id');
     if (error || !data?.length) {
       showToast(`Não foi possível avançar a etapa: ${error?.message || 'a PO pode ter sido alterada por outro usuário.'}`, true);
       await loadOrders(true);
@@ -1311,7 +1323,7 @@
     if (!confirm(`Confirmar que a PO ${order.po_number} está concluída e os documentos foram recebidos?`)) return;
     const { data, error } = await db.from('purchase_orders')
       .update({ completed_at: new Date().toISOString(), status: 'Concluído' })
-      .eq('id', id).eq('status', 'Fatura e documentos pendentes').select('id');
+      .eq('id', id).eq('status', order._dbStatus || order.status).select('id');
     if (error || !data?.length) {
       showToast(`Não foi possível concluir: ${error?.message || 'a PO pode ter sido alterada por outro usuário.'}`, true);
       await loadOrders(true);
@@ -1409,24 +1421,109 @@
     await loadOrders(true);
   }
 
+  function chooseOrderEmailTemplate(order) {
+    const status = normalizeSystemStatus(order.status);
+    if (status === 'Fatura e documentos pendentes') return 'pending-docs';
+    if (status === 'Aguardando resposta do fornecedor') return 'supplier-response';
+    if (status === 'Em produção' && (daysFromToday(order.estimated_ready_date) ?? 0) < 0) return 'po-overdue';
+    return 'production-followup';
+  }
+
+  function createOrderEmailDraft(order, template) {
+    const number = String(order.po_number || '').trim();
+    const po = `PO No. ${number}`;
+    const lateDays = daysFromToday(order.estimated_ready_date);
+    const overdue = lateDays !== null && lateDays < 0 ? Math.abs(lateDays) : 0;
+    const salutation = 'Dear Team,\n\n';
+    const closing = '\n\nBest regards,\nZPMC Brazil';
+
+    if (template === 'supplier-response') {
+      return {
+        subject: `Follow-up - ${po} - Confirmation and ETR`,
+        body: salutation +
+          `We are following up on ${po}, as we are still awaiting your response.\n\n` +
+          'Could you please confirm receipt of the order and provide the estimated time of readiness (ETR)?\n\n' +
+          'We would appreciate your prompt feedback.' + closing,
+        hint: 'Solicita resposta do fornecedor, confirmação de recebimento e ETR.'
+      };
+    }
+
+    if (template === 'po-overdue') {
+      const elapsed = overdue === 1 ? '1 calendar day overdue' : `${overdue} calendar days overdue`;
+      const delayStatement = overdue
+        ? `Based on the previous estimated readiness date of ${formatDate(order.estimated_ready_date)}, ${po} is now ${elapsed}.\n\n`
+        : `We are following up on the readiness schedule for ${po}.\n\n`;
+      return {
+        subject: overdue
+          ? `Urgent Follow-up - ${po} - ${overdue} Day${overdue === 1 ? '' : 's'} Overdue`
+          : `Urgent Follow-up - ${po} - Revised ETR Required`,
+        body: salutation + delayStatement +
+          'Please clarify the reason for the delay and provide a new confirmed estimated time of readiness (ETR).\n\n' +
+          'Your prompt response is important so we can update our customer accordingly.' + closing,
+        hint: overdue
+          ? `Atraso calculado pela estimativa cadastrada: ${overdue} dia${overdue === 1 ? '' : 's'} corrido${overdue === 1 ? '' : 's'}.`
+          : 'Sem data vencida cadastrada. O modelo solicita novo ETR sem afirmar dias de atraso.'
+      };
+    }
+
+    if (template === 'pending-docs') {
+      return {
+        subject: `Kind Reminder - ${po} - Pending Invoice and Signed Documents`,
+        body: salutation +
+          `This is a kind reminder regarding ${po}.\n\n` +
+          'The invoice required for payment and the duly signed documents are still pending.\n\n' +
+          'Could you please send the outstanding invoice and signed documents as soon as possible so we can proceed with the payment process?\n\n' +
+          'Thank you in advance for your support.' + closing,
+        hint: 'Lembrete sobre invoice para pagamento e documentos assinados.'
+      };
+    }
+
+    if (template === 'order-initiation') {
+      const details = [
+        `PO Number: ${number}`,
+        order.client ? `Customer: ${order.client}` : null,
+        order.incoterm ? `Incoterm: ${order.incoterm}` : null,
+        order.estimated_ready_date ? `Estimated Readiness: ${formatDate(order.estimated_ready_date)}` : null
+      ].filter(Boolean).join('\n');
+      return {
+        subject: `Purchase Order ${number} - Order Initiation`,
+        body: salutation + 'We would like to initiate the processing of the following purchase order:\n\n' + details +
+          '\n\nKindly confirm receipt of this order and provide the estimated time of readiness (ETR) and LSP information, if available.\n\n' +
+          'Please let us know if any additional information is required.' + closing,
+        hint: 'Modelo original para início de um pedido.'
+      };
+    }
+
+    return {
+      subject: `Production Status Follow-up - ${po} - ETR Confirmation`,
+      body: salutation + `Could you please provide an update on the production status of ${po} and confirm the latest estimated time of readiness (ETR)?\n\n` +
+        'We would appreciate your feedback to keep the customer informed.' + closing,
+      hint: 'Solicita atualização de produção e ETR, sem informar atraso inexistente.'
+    };
+  }
+
+  function applyOrderEmailTemplate() {
+    if (!currentEmailOrder) return;
+    const draft = createOrderEmailDraft(currentEmailOrder, orderEmailTemplate.value);
+    orderEmailSubject.value = draft.subject;
+    orderEmailBody.value = draft.body;
+    orderEmailTemplateHint.textContent = draft.hint;
+  }
+
   function openOrderEmailModal(order) {
     if (!requireEditor() || !order) return;
+    currentEmailOrder = order;
     orderEmailTo.value = '';
     orderEmailCc.value = '';
-    orderEmailSubject.value = `Purchase Order ${order.po_number} - Order Initiation`;
-    const details = [
-      `PO Number: ${order.po_number}`,
-      order.client ? `Customer: ${order.client}` : null,
-      order.incoterm ? `Incoterm: ${order.incoterm}` : null,
-      order.estimated_ready_date ? `Estimated Readiness: ${formatDate(order.estimated_ready_date)}` : null
-    ].filter(Boolean).join('\n');
-    orderEmailBody.value = `Dear Team,\n\nWe would like to initiate the processing of the following purchase order:\n\n${details}\n\nKindly confirm receipt of this order and provide the estimated time of readiness (ETR) and LSP information, if available.\n\nPlease let us know if any additional information is required.\n\nBest regards,\nZPMC Brazil`;
+    orderEmailTemplate.value = chooseOrderEmailTemplate(order);
+    applyOrderEmailTemplate();
     orderEmailModal.classList.remove('hidden');
     orderEmailTo.focus();
   }
 
   function closeOrderEmailModal() {
     orderEmailModal.classList.add('hidden');
+    currentEmailOrder = null;
   }
 
   function readEmailDraft() {
@@ -1440,10 +1537,10 @@
 
   async function copyOrderEmail() {
     const draft = readEmailDraft();
-    const complete = `Para: ${draft.to}\nCc: ${draft.cc}\nAssunto: ${draft.subject}\n\n${draft.body}`;
+    const complete = `To: ${draft.to}\nCc: ${draft.cc}\nSubject: ${draft.subject}\n\n${draft.body}`;
     try {
       await navigator.clipboard.writeText(complete);
-      showToast('E-mail copiado. Anexe a PO antes de enviar.');
+      showToast('E-mail copiado. Revise o destinatário e os anexos, se necessários.');
     } catch (err) {
       orderEmailBody.focus();
       orderEmailBody.select();
@@ -1462,7 +1559,7 @@
     params.set('subject', draft.subject);
     params.set('body', draft.body);
     window.location.href = `mailto:${encodeURIComponent(draft.to)}?${params.toString()}`;
-    showToast('Rascunho aberto no aplicativo de e-mail. Confira o destinatário e anexe a PO.');
+    showToast('Rascunho aberto no aplicativo de e-mail. Confira o destinatário e os anexos.');
   }
 
   async function startSupplierWait(id) {
@@ -2294,6 +2391,7 @@
   });
 
   newPoBtn.addEventListener('click', () => { if (requireEditor()) openModal(); });
+  orderEmailTemplate.addEventListener('change', applyOrderEmailTemplate);
   $('closeOrderEmailBtn').addEventListener('click', closeOrderEmailModal);
   $('cancelOrderEmailBtn').addEventListener('click', closeOrderEmailModal);
   $('copyOrderEmailBtn').addEventListener('click', copyOrderEmail);

@@ -6,8 +6,8 @@
   <title>PO Control | Central de Operações</title>
   <meta name="theme-color" content="#111f38" />
   <meta name="description" content="Central de operações para controle de pedidos de compra, follow-up e cotações China." />
-  <link rel="stylesheet" href="./styles.css?v=7.0.0" />
-  <link rel="stylesheet" href="./professional.css?v=7.0.0" />
+  <link rel="stylesheet" href="./styles.css?v=7.2.0" />
+  <link rel="stylesheet" href="./professional.css?v=7.2.0" />
 </head>
 <body>
   <section id="authPage" class="auth-page">
@@ -28,7 +28,7 @@
     <div class="auth-main">
     <div class="auth-card">
       <div class="brand brand-minimal">
-        <span class="app-logo-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <img class="zpmc-brand-logo zpmc-brand-logo-auth" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
         <div>
           <h1>PO Control</h1>
           <p>Central de operações · ZPMC Brazil</p>
@@ -68,7 +68,7 @@
   <section id="appPage" class="app hidden">
     <aside class="app-sidebar" aria-label="Navegação principal">
       <div class="sidebar-brand">
-        <span class="app-logo-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <img class="zpmc-brand-logo zpmc-brand-logo-sidebar" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
         <div class="sidebar-brand-name"><strong>PO Control</strong><small>Operations workspace</small></div>
       </div>
       <div class="sidebar-section-label">MENU PRINCIPAL</div>
@@ -77,11 +77,7 @@
         <button type="button" class="mode-tab" data-mode="quotes"><span class="nav-icon" aria-hidden="true">⇄</span><span>Cotações China</span><span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="sidebar-company" aria-label="Identidade ZPMC Brazil">
-          <img class="zpmc-link-logo zpmc-link-logo-sidebar" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
-          <div class="sidebar-company-text"><b>ZPMC Brazil</b><small>Central de operações</small></div>
-        </div>
-        <div class="sidebar-version">ZPMC BRAZIL <span>•</span> V7.1</div>
+<div class="sidebar-version">ZPMC BRAZIL <span>•</span> V7.2</div>
       </div>
     </aside>
     <div class="app-workspace">
@@ -239,7 +235,7 @@
         </section>
       </section>
     </main>
-    <footer class="app-footer">PO Control v7.1 <span>·</span> Desenvolvido por João Rafael <span>·</span> ZPMC Brazil</footer>
+    <footer class="app-footer">PO Control v7.2 <span>·</span> Desenvolvido por João Rafael <span>·</span> ZPMC Brazil</footer>
     </div>
   </section>
 
@@ -355,11 +351,23 @@
   <div id="orderEmailModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="orderEmailTitle">
     <div class="modal email-modal">
       <div class="modal-head">
-        <h3 id="orderEmailTitle">E-mail de início de ordem</h3>
+        <h3 id="orderEmailTitle">E-mail de acompanhamento da PO</h3>
         <button id="closeOrderEmailBtn" type="button" class="icon-btn" aria-label="Fechar">×</button>
       </div>
       <div class="modal-body">
-        <p class="email-guidance">Revise o destinatário e o texto. O sistema prepara o e-mail, mas não o envia automaticamente. Anexe a PO manualmente no seu aplicativo de e-mail.</p>
+        <p class="email-guidance">O modelo é selecionado automaticamente conforme a etapa da PO. Você pode alterá-lo e editar o texto antes de copiar ou abrir no e-mail. Nenhuma mensagem é enviada automaticamente.</p>
+        <div class="email-template-panel">
+          <div class="field"><label for="orderEmailTemplate">Tipo de e-mail</label>
+            <select id="orderEmailTemplate">
+              <option value="supplier-response">Resposta do fornecedor + ETR</option>
+              <option value="po-overdue">Atraso da PO + novo ETR</option>
+              <option value="pending-docs">Invoice para pagamento + documentos assinados</option>
+              <option value="production-followup">Acompanhamento de produção</option>
+              <option value="order-initiation">Início de pedido / confirmação de recebimento</option>
+            </select>
+          </div>
+          <p id="orderEmailTemplateHint" class="email-template-hint" aria-live="polite"></p>
+        </div>
         <div class="email-fields">
           <div class="field"><label for="orderEmailTo">Para (e-mail do fornecedor)</label><input id="orderEmailTo" type="email" placeholder="contato@fornecedor.com" /></div>
           <div class="field"><label for="orderEmailCc">Cc (opcional)</label><input id="orderEmailCc" placeholder="colaborador@empresa.com" /></div>
@@ -379,8 +387,8 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Bibliotecas servidas pela propria Vercel depois do build, sem depender de CDN no navegador. -->
-  <script src="./vendor.js?v=7.0.0"></script>
-  <script src="./config.js?v=7.0.0"></script>
-  <script src="./app.js?v=7.0.0"></script>
+  <script src="./vendor.js?v=7.2.0"></script>
+  <script src="./config.js?v=7.2.0"></script>
+  <script src="./app.js?v=7.2.0"></script>
 </body>
 </html>
