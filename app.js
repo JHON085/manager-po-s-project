@@ -519,8 +519,7 @@
   const PO_STAGES = [
     'Aguardando resposta do fornecedor',
     'Em produção',
-    'Fatura pendente',
-    'Documentos assinados pendentes',
+    'Fatura e documentos pendentes',
     'Concluído'
   ];
   const ACTIVE_PO_STAGES = new Set(PO_STAGES.filter((value) => value !== 'Concluído'));
@@ -537,8 +536,7 @@
     }
 
     if (raw === 'Cancelado' || raw === 'Cancelada') return 'Cancelado';
-    if (raw === 'Fatura pendente') return 'Fatura pendente';
-    if (['Documentos assinados pendentes', 'Docs assinados pendentes', 'Docs assinados pendente'].includes(raw)) return 'Documentos assinados pendentes';
+    if (['Fatura pendente', 'Documentos assinados pendentes', 'Docs assinados pendentes', 'Docs assinados pendente', 'Fatura e documentos pendentes'].includes(raw)) return 'Fatura e documentos pendentes';
     if (['Concluído', 'Pronto', 'Embarcado'].includes(raw)) return 'Concluído';
     return 'Em produção';
   }
@@ -556,7 +554,7 @@
     if (status === 'Concluído') {
       return { key: 'done', label: 'Concluído', cls: 'neutral', days: null };
     }
-    if (status === 'Fatura pendente' || status === 'Documentos assinados pendentes') {
+    if (status === 'Fatura e documentos pendentes') {
       return { key: 'pending', label: status, cls: 'warn', days: null };
     }
     const days = daysFromToday(order.estimated_ready_date);
@@ -823,9 +821,9 @@
     ordersBody.innerHTML = filtered.map((o) => {
       const health = getHealth(o);
       const normalizedStatus = normalizeSystemStatus(o.status);
-      const canCompleteOrder = normalizedStatus === 'Documentos assinados pendentes';
+      const canCompleteOrder = normalizedStatus === 'Fatura e documentos pendentes';
       const nextStatus = PO_STAGES[PO_STAGES.indexOf(normalizedStatus) + 1] || null;
-      const canAdvance = ['Em produção', 'Fatura pendente'].includes(normalizedStatus);
+      const canAdvance = ['Em produção'].includes(normalizedStatus);
       return `
         <tr class="row-${health.key}" data-po-id="${o.id}">
           <td>${canEdit() ? `<button class="po-link" data-action="edit" data-id="${o.id}">${escapeHtml(o.po_number)}</button>` : `<span class="po-number-readonly">${escapeHtml(o.po_number)}</span>`}</td>
@@ -837,7 +835,7 @@
           <td class="origin-followup-cell">${originFollowUpHtml(o)}</td>
           <td><span class="badge ${health.cls}">${health.label}</span></td>
           <td>
-            <span class="badge ${normalizedStatus === 'Concluído' ? 'ok' : normalizedStatus === 'Cancelado' ? 'neutral' : normalizedStatus === 'Aguardando resposta do fornecedor' ? 'status-waiting' : normalizedStatus === 'Fatura pendente' || normalizedStatus === 'Documentos assinados pendentes' ? 'status-pending' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span>
+            <span class="badge ${normalizedStatus === 'Concluído' ? 'ok' : normalizedStatus === 'Cancelado' ? 'neutral' : normalizedStatus === 'Aguardando resposta do fornecedor' ? 'status-waiting' : normalizedStatus === 'Fatura e documentos pendentes' ? 'status-pending' : 'status-production'}">${escapeHtml(statusDisplay(o.status))}</span>
             ${normalizeSystemStatus(o.status) === 'Concluído' && o.completed_at ? `<small class="completion-date">Concluído em ${escapeHtml(formatDateOnly(o.completed_at))}</small>` : ''}
           </td>
           <td>${supplierWaitHtml(o)}</td>
@@ -1285,7 +1283,7 @@
     const order = orders.find((o) => o.id === id);
     if (!order) return;
     const current = normalizeSystemStatus(order.status);
-    if (!['Em produção', 'Fatura pendente'].includes(current)) {
+    if (!['Em produção'].includes(current)) {
       showToast('Esta etapa precisa ser atualizada no formulário ou pela confirmação do fornecedor.', true);
       return;
     }
@@ -1306,14 +1304,14 @@
   async function markCompleted(id) {
     if (!requireEditor()) return;
     const order = orders.find((o) => o.id === id);
-    if (!order || normalizeSystemStatus(order.status) !== 'Documentos assinados pendentes') {
-      showToast('Antes de concluir, avance até Documentos assinados pendentes.', true);
+    if (!order || normalizeSystemStatus(order.status) !== 'Fatura e documentos pendentes') {
+      showToast('Antes de concluir, avance até Fatura e documentos pendentes.', true);
       return;
     }
     if (!confirm(`Confirmar que a PO ${order.po_number} está concluída e os documentos foram recebidos?`)) return;
     const { data, error } = await db.from('purchase_orders')
       .update({ completed_at: new Date().toISOString(), status: 'Concluído' })
-      .eq('id', id).eq('status', 'Documentos assinados pendentes').select('id');
+      .eq('id', id).eq('status', 'Fatura e documentos pendentes').select('id');
     if (error || !data?.length) {
       showToast(`Não foi possível concluir: ${error?.message || 'a PO pode ter sido alterada por outro usuário.'}`, true);
       await loadOrders(true);

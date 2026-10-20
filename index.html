@@ -77,8 +77,11 @@
         <button type="button" class="mode-tab" data-mode="quotes"><span class="nav-icon" aria-hidden="true">⇄</span><span>Cotações China</span><span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="sidebar-note"><span class="sidebar-note-icon" aria-hidden="true">↗</span><b>Operações organizadas</b><small>Acompanhe pedidos, prazos e retornos em um só lugar.</small></div>
-        <div class="sidebar-version">ZPMC BRAZIL <span>•</span> V7.0</div>
+        <div class="sidebar-company" aria-label="Identidade ZPMC Brazil">
+          <img class="zpmc-link-logo zpmc-link-logo-sidebar" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
+          <div class="sidebar-company-text"><b>ZPMC Brazil</b><small>Central de operações</small></div>
+        </div>
+        <div class="sidebar-version">ZPMC BRAZIL <span>•</span> V7.1</div>
       </div>
     </aside>
     <div class="app-workspace">
@@ -115,8 +118,7 @@
         <div class="workflow-steps">
           <span><b>01</b> Aguardando fornecedor</span><i aria-hidden="true">›</i>
           <span><b>02</b> Em produção</span><i aria-hidden="true">›</i>
-          <span><b>03</b> Fatura pendente</span><i aria-hidden="true">›</i>
-          <span><b>04</b> Documentos pendentes</span><i aria-hidden="true">›</i>
+          <span><b>03</b> Fatura e documentos pendentes</span><i aria-hidden="true">›</i>
           <span class="workflow-last"><b>✓</b> Concluído</span>
         </div>
       </div>
@@ -149,8 +151,7 @@
               <option value="">Todos os status</option>
               <option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option>
               <option value="Em produção">Em produção</option>
-              <option value="Fatura pendente">Fatura pendente</option>
-              <option value="Documentos assinados pendentes">Documentos assinados pendentes</option>
+              <option value="Fatura e documentos pendentes">Fatura e documentos pendentes</option>
               <option value="Concluído">Concluído</option>
               <option value="Cancelado">Cancelada</option>
             </select>
@@ -238,7 +239,7 @@
         </section>
       </section>
     </main>
-    <footer class="app-footer">PO Control v7.0 <span>·</span> Desenvolvido por João Rafael <span>·</span> ZPMC Brazil</footer>
+    <footer class="app-footer">PO Control v7.1 <span>·</span> Desenvolvido por João Rafael <span>·</span> ZPMC Brazil</footer>
     </div>
   </section>
 
@@ -268,7 +269,7 @@
               <div class="field"><label for="orderDate">Data de envio da PO (PO Processing Date)</label><input id="orderDate" type="date" /></div>
               <div class="field"><label for="estimatedReadyDate">ETD / Estimativa de prontidão</label><input id="estimatedReadyDate" type="date" /></div>
               <div class="field"><label for="actualReadyDate">Prontidão</label><input id="actualReadyDate" type="date" /></div>
-              <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option><option value="Em produção">Em produção</option><option value="Fatura pendente">Fatura pendente</option><option value="Documentos assinados pendentes">Documentos assinados pendentes</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
+              <div class="field"><label for="poStatus">Status *</label><select id="poStatus" required><option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option><option value="Em produção">Em produção</option><option value="Fatura e documentos pendentes">Fatura e documentos pendentes</option><option value="Concluído">Concluído</option><option value="Cancelado">Cancelada</option></select></div>
               <div class="field span-2"><label for="notes">Observações</label><textarea id="notes"></textarea></div>
 
               <details class="extra-section span-3">
