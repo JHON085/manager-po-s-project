@@ -1554,12 +1554,16 @@
       showToast('Preencha o assunto e a mensagem antes de abrir o e-mail.', true);
       return;
     }
-    const params = new URLSearchParams();
-    if (draft.cc) params.set('cc', draft.cc);
-    params.set('subject', draft.subject);
-    params.set('body', draft.body);
-    window.location.href = `mailto:${encodeURIComponent(draft.to)}?${params.toString()}`;
-    showToast('Rascunho aberto no aplicativo de e-mail. Confira o destinatário e os anexos.');
+    // URLSearchParams codifica espaços como "+" (form-urlencoded), mas os
+    // aplicativos de e-mail podem exibir esses sinais literalmente no mailto.
+    // Encode cada campo com encodeURIComponent e padronize as quebras em CRLF.
+    const normalizedBody = draft.body.replace(/\r\n|\r|\n/g, '\r\n');
+    const emailParams = [];
+    if (draft.cc) emailParams.push(`cc=${encodeURIComponent(draft.cc)}`);
+    emailParams.push(`subject=${encodeURIComponent(draft.subject)}`);
+    emailParams.push(`body=${encodeURIComponent(normalizedBody)}`);
+    window.location.href = `mailto:${encodeURIComponent(draft.to)}?${emailParams.join('&')}`;
+    showToast('Rascunho solicitado ao aplicativo de e-mail. Confira o destinatário e os anexos.');
   }
 
   async function startSupplierWait(id) {

@@ -13,5 +13,5 @@ await build({
   logLevel: 'info'
 });
 await Promise.all(['index.html','app.js','styles.css','professional.css','config.js'].map(file => copyFile(file, `dist/${file}`)));
-await writeFile('dist/versao.txt', 'PO Control v7.2.0\nBibliotecas locais via Vercel build.\n');
-console.log('PO Control v7.2.0: build completo em dist/.');
+await writeFile('dist/versao.txt', 'PO Control v7.2.1\nBibliotecas locais via Vercel build.\n');
+console.log('PO Control v7.2.1: build completo em dist/.');
