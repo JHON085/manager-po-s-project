@@ -3,18 +3,41 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PO Control v6.9.1</title>
-  <link rel="stylesheet" href="./styles.css?v=6.9.1" />
+  <title>PO Control | Central de Operações</title>
+  <meta name="theme-color" content="#111f38" />
+  <meta name="description" content="Central de operações para controle de pedidos de compra, follow-up e cotações China." />
+  <link rel="stylesheet" href="./styles.css?v=7.0.0" />
+  <link rel="stylesheet" href="./professional.css?v=7.0.0" />
 </head>
 <body>
   <section id="authPage" class="auth-page">
+    <div class="auth-intro" aria-hidden="true">
+      <div class="auth-intro-inner">
+        <div class="auth-intro-tag"><span class="signal-dot"></span> OPERAÇÕES INTERNACIONAIS</div>
+        <h2>Visibilidade para cada etapa do pedido.</h2>
+        <p>Da confirmação do fornecedor à conclusão, todos os processos em uma única central.</p>
+        <div class="auth-illustration">
+          <div class="illustration-track"><span>01</span><b>Recebimento</b><i></i></div>
+          <div class="illustration-track"><span>02</span><b>Produção</b><i></i></div>
+          <div class="illustration-track"><span>03</span><b>Documentação</b><i></i></div>
+          <div class="illustration-track"><span>04</span><b>Concluído</b><i></i></div>
+        </div>
+      </div>
+      <div class="auth-intro-footer">PO CONTROL <span>•</span> OPERATIONS WORKSPACE</div>
+    </div>
+    <div class="auth-main">
     <div class="auth-card">
       <div class="brand brand-minimal">
-        <img class="zpmc-link-logo zpmc-link-logo-auth" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
+        <span class="app-logo-mark" aria-hidden="true"><span></span><span></span><span></span></span>
         <div>
           <h1>PO Control</h1>
-          <p>Follow-up de pedidos e cotações</p>
+          <p>Central de operações · ZPMC Brazil</p>
         </div>
+      </div>
+      <div class="auth-welcome">
+        <span class="eyebrow">BEM-VINDO DE VOLTA</span>
+        <h2>Acesse sua central</h2>
+        <p>Entre com sua conta para acompanhar pedidos e cotações.</p>
       </div>
       <form id="authForm" class="auth-form" novalidate>
         <div class="field">
@@ -36,51 +59,69 @@
         </div>
         <p class="auth-note">Acesso de edição restrito à equipe autorizada. O modo espectador é somente leitura.</p>
       </form>
-      <div id="authMessage" class="message hidden"></div>
+      <div id="authMessage" class="message hidden" role="alert"></div>
+    </div>
+    <p class="auth-help">Ambiente restrito · Acesso seguro via Supabase</p>
     </div>
   </section>
 
   <section id="appPage" class="app hidden">
+    <aside class="app-sidebar" aria-label="Navegação principal">
+      <div class="sidebar-brand">
+        <span class="app-logo-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <div class="sidebar-brand-name"><strong>PO Control</strong><small>Operations workspace</small></div>
+      </div>
+      <div class="sidebar-section-label">MENU PRINCIPAL</div>
+      <nav class="mode-tabs" aria-label="Áreas do sistema">
+        <button type="button" class="mode-tab active" data-mode="pos"><span class="nav-icon" aria-hidden="true">▦</span><span>Pedidos de compra</span></button>
+        <button type="button" class="mode-tab" data-mode="quotes"><span class="nav-icon" aria-hidden="true">⇄</span><span>Cotações China</span><span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note"><span class="sidebar-note-icon" aria-hidden="true">↗</span><b>Operações organizadas</b><small>Acompanhe pedidos, prazos e retornos em um só lugar.</small></div>
+        <div class="sidebar-version">ZPMC BRAZIL <span>•</span> V7.0</div>
+      </div>
+    </aside>
+    <div class="app-workspace">
     <header class="topbar">
       <div class="left brand-header">
-        <img class="zpmc-link-logo zpmc-link-logo-header" src="https://download.logo.wine/logo/ZPMC_%28company%29/ZPMC_%28company%29-Logo.wine.png" alt="ZPMC" />
-        <h2>PO Control</h2>
+        <div class="breadcrumb"><span>Workspace</span><span class="breadcrumb-divider">/</span><strong id="currentWorkspace">Pedidos de compra</strong></div>
       </div>
       <div class="right">
         <span id="syncPill" class="sync-pill">Conectando...</span>
         <span id="rolePill" class="role-pill hidden"></span>
         <span id="userEmail" class="user-email"></span>
-        <button id="logoutBtn" type="button" class="btn btn-secondary btn-small">Sair</button>
+        <button id="logoutBtn" type="button" class="btn btn-secondary btn-small logout-button" title="Encerrar sessão">Sair <span aria-hidden="true">↗</span></button>
       </div>
     </header>
 
     <main class="container">
-      <nav class="mode-tabs" aria-label="Áreas do sistema">
-        <button type="button" class="mode-tab active" data-mode="pos">Pedidos / FOLLOW UP</button>
-        <button type="button" class="mode-tab" data-mode="quotes">Cotações China <span id="quoteNavBadge" class="nav-badge hidden">0</span></button>
-      </nav>
 
       <section id="poView" class="mode-view">
       <div class="page-head">
         <div>
-          <h1>Dashboard</h1>
-          <p>Acompanhe a FOLLOW UP em tempo real: recebimento, produção, prazos e conclusão.</p>
+          <div class="eyebrow page-eyebrow"><span class="eyebrow-line"></span> PAINEL OPERACIONAL <span id="todayLabel" class="date-chip"></span></div>
+          <h1>Controle de pedidos</h1>
+          <p>Visão centralizada dos seus pedidos, prazos e pendências de fornecedores.</p>
         </div>
         <div class="page-actions">
-          <button id="importExcelBtn" type="button" class="btn btn-secondary" data-editor-only>Sincronizar Excel</button>
-          <button id="newPoBtn" type="button" class="btn btn-primary" data-editor-only>+ Novo PO</button>
+          <button id="refreshOrdersBtn" type="button" class="btn btn-secondary" title="Atualizar dados">↻ <span>Atualizar</span></button>
+          <button id="importExcelBtn" type="button" class="btn btn-secondary" data-editor-only>⇧ <span>Importar Excel</span></button>
+          <button id="newPoBtn" type="button" class="btn btn-primary" data-editor-only><span aria-hidden="true">＋</span> Novo pedido</button>
         </div>
       </div>
 
-      <div class="workflow-guide" aria-label="Fluxo da ordem">
-        <strong>Etapas da ordem:</strong>
-        <span>Aguardando fornecedor</span><span aria-hidden="true">→</span>
-        <span>Em produção</span><span aria-hidden="true">→</span>
-        <span>Fatura pendente</span><span aria-hidden="true">→</span>
-        <span>Documentos assinados pendentes</span><span aria-hidden="true">→</span>
-        <span>Concluído</span><small>Cancelado é um encerramento alternativo.</small>
+      <div class="workflow-guide" aria-label="Etapas do pedido">
+        <strong>FLUXO DO PROCESSO</strong>
+        <div class="workflow-steps">
+          <span><b>01</b> Aguardando fornecedor</span><i aria-hidden="true">›</i>
+          <span><b>02</b> Em produção</span><i aria-hidden="true">›</i>
+          <span><b>03</b> Fatura pendente</span><i aria-hidden="true">›</i>
+          <span><b>04</b> Documentos pendentes</span><i aria-hidden="true">›</i>
+          <span class="workflow-last"><b>✓</b> Concluído</span>
+        </div>
       </div>
 
+      <div class="section-heading"><div><span class="eyebrow">DESEMPENHO OPERACIONAL</span><h2>Visão geral</h2></div><small>Indicadores atualizados com os pedidos</small></div>
       <section class="metrics">
         <div class="metric total"><div class="label">Total de POs</div><div id="metricTotal" class="value">0</div><div class="hint">Todos os registros da base</div></div>
         <div class="metric"><div class="label">POs ativos</div><div id="metricActive" class="value">0</div><div class="hint">Ainda em acompanhamento</div></div>
@@ -94,9 +135,16 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h3>Pedidos de compra</h3>
+          <div class="panel-heading"><span class="eyebrow">ACOMPANHAMENTO</span><h3>Lista de pedidos <span id="resultCount" class="result-count">0</span></h3><p>Use os filtros para localizar processos e acompanhar cada etapa.</p></div>
+          <div class="panel-tools"><button id="exportOrdersBtn" type="button" class="btn btn-secondary btn-small" data-editor-only>↓ Exportar CSV</button><button id="clearFiltersBtn" type="button" class="btn btn-secondary btn-small">Limpar filtros</button></div>
+          <div class="quick-filters" aria-label="Filtros rápidos">
+            <button type="button" class="quick-filter active" data-quick-filter="">Todos</button>
+            <button type="button" class="quick-filter" data-quick-filter="late">Atrasados</button>
+            <button type="button" class="quick-filter" data-quick-filter="near">Próximos</button>
+            <button type="button" class="quick-filter" data-quick-filter="done">Finalizados</button>
+          </div>
           <div class="filters">
-            <input id="searchInput" type="search" placeholder="Buscar PO, fornecedor, cliente..." />
+            <div class="search-field"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" aria-label="Buscar pedidos" placeholder="Buscar número, fornecedor, cliente..." /></div>
             <select id="statusFilter">
               <option value="">Todos os status</option>
               <option value="Aguardando resposta do fornecedor">Aguardando resposta do fornecedor</option>
@@ -128,7 +176,8 @@
             </select>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-helper"><span>Pedidos em acompanhamento</span><small>Deslize horizontalmente para ver todas as informações <span aria-hidden="true">→</span></small></div>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Tabela de pedidos, com rolagem horizontal">
           <table>
             <thead><tr><th>PO</th><th>Fornecedor</th><th>Cliente</th><th>Estimativa</th><th>Prontidão real</th><th>Etapa FOLLOW UP</th><th>Prontidão</th><th>Situação</th><th>Status</th><th>Confirmação fornecedor</th><th class="actions-header">Ações</th></tr></thead>
             <tbody id="ordersBody"><tr><td colspan="11" class="empty">Carregando...</td></tr></tbody>
@@ -141,8 +190,9 @@
       <section id="quotesView" class="mode-view hidden">
         <div class="page-head">
           <div>
+            <div class="eyebrow page-eyebrow"><span class="eyebrow-line"></span> PROCUREMENT INTERNACIONAL</div>
             <h1>Cotações China</h1>
-            <p>Acompanhe o tempo de resposta das RFQs enviadas aos fornecedores da China.</p>
+            <p>Controle as solicitações enviadas, as metas de resposta e os retornos dos fornecedores.</p>
           </div>
           <div class="page-actions">
             <button id="refreshQuotesBtn" type="button" class="btn btn-secondary">Atualizar</button>
@@ -167,7 +217,7 @@
 
         <section class="panel">
           <div class="panel-head">
-            <h3>Controle de cotações</h3>
+            <h3>Controle de cotações <span id="quoteResultCount" class="result-count">0</span></h3>
             <div class="filters">
               <input id="quoteSearch" type="search" placeholder="Buscar referência, fornecedor, cliente..." />
               <select id="quoteStatusFilter">
@@ -188,9 +238,11 @@
         </section>
       </section>
     </main>
+    <footer class="app-footer">PO Control v7.0 <span>·</span> Desenvolvido por João Rafael <span>·</span> ZPMC Brazil</footer>
+    </div>
   </section>
 
-  <div id="poModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <div id="poModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal">
       <div class="modal-head">
         <h3 id="modalTitle">Novo PO</h3>
@@ -270,7 +322,7 @@
   </div>
 
 
-  <div id="quoteModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <div id="quoteModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="quoteModalTitle">
     <div class="modal quote-modal">
       <div class="modal-head">
         <h3 id="quoteModalTitle">Nova cotação China</h3>
@@ -325,13 +377,9 @@
   <input id="excelFileInput" type="file" accept=".xlsx,.xlsm,.xls" hidden />
   <div id="toast" class="toast hidden"></div>
 
-  <footer style="text-align:center; padding:22px 16px 18px; color:#98a2b3; font-size:12px; font-weight:400; letter-spacing:.01em;">
-    Developed by João Rafael • PO Control v6.9.1
-  </footer>
-
   <!-- Bibliotecas servidas pela propria Vercel depois do build, sem depender de CDN no navegador. -->
-  <script src="./vendor.js?v=6.9.1"></script>
-  <script src="./config.js?v=6.9.1"></script>
-  <script src="./app.js?v=6.9.1"></script>
+  <script src="./vendor.js?v=7.0.0"></script>
+  <script src="./config.js?v=7.0.0"></script>
+  <script src="./app.js?v=7.0.0"></script>
 </body>
 </html>

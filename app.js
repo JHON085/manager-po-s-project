@@ -115,6 +115,14 @@
   const metricOriginWaiting = $('metricOriginWaiting');
   const metricDone = $('metricDone');
   const toast = $('toast');
+  const resultCount = $('resultCount');
+  const quoteResultCount = $('quoteResultCount');
+  const refreshOrdersBtn = $('refreshOrdersBtn');
+  const clearFiltersBtn = $('clearFiltersBtn');
+  const exportOrdersBtn = $('exportOrdersBtn');
+  const todayLabel = $('todayLabel');
+  const currentWorkspace = $('currentWorkspace');
+  const quickFilterButtons = [...document.querySelectorAll('[data-quick-filter]')];
   const orderEmailModal = $('orderEmailModal');
   const orderEmailTo = $('orderEmailTo');
   const orderEmailCc = $('orderEmailCc');
@@ -129,6 +137,13 @@
   const processDataPanel = $('processDataPanel');
   const processSheetPanel = $('processSheetPanel');
   const processSheetRows = $('processSheetRows');
+  // Referências legadas da antiga visão de planilha (ausente no layout atual).
+  // Declaradas para manter compatibilidade sem lançar ReferenceError.
+  const sheetRows = $('sheetRows');
+  const sheetSearch = $('sheetSearch');
+  const sheetCount = $('sheetCount');
+  const sheetRefreshBtn = $('sheetRefreshBtn');
+  const sheetImportBtn = $('sheetImportBtn');
   const modeTabs = [...document.querySelectorAll('.mode-tab')];
   const quoteNavBadge = $('quoteNavBadge');
   const quoteSetup = $('quoteSetup');
@@ -180,6 +195,8 @@
   let quotesTableAvailable = true;
   let activeMode = 'pos';
   let modalOrderSnapshot = null;
+  let lastFilteredOrders = [];
+  let toastTimer = null;
 
   function showMessage(el, text, type = 'error') {
     el.textContent = text;
@@ -193,12 +210,16 @@
 
   function setSync(text) {
     syncPill.textContent = text;
+    syncPill.classList.toggle('sync-error', /erro|falha|indisponível/i.test(text));
+    syncPill.title = text;
   }
 
   function showToast(text, error = false, duration = 3600) {
+    if (toastTimer) clearTimeout(toastTimer);
     toast.textContent = text;
     toast.className = error ? 'toast error' : 'toast';
-    setTimeout(() => { toast.className = 'toast hidden'; }, duration);
+    toast.setAttribute('role', error ? 'alert' : 'status');
+    toastTimer = setTimeout(() => { toast.className = 'toast hidden'; toastTimer = null; }, duration);
   }
 
   function normalizedEmail(email) {
@@ -616,7 +637,12 @@
     activeMode = ['pos', 'quotes'].includes(mode) ? mode : 'pos';
     poView.classList.toggle('hidden', activeMode !== 'pos');
     quotesView.classList.toggle('hidden', activeMode !== 'quotes');
-    modeTabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === activeMode));
+    modeTabs.forEach((btn) => {
+      const selected = btn.dataset.mode === activeMode;
+      btn.classList.toggle('active', selected);
+      btn.setAttribute('aria-current', selected ? 'page' : 'false');
+    });
+    if (currentWorkspace) currentWorkspace.textContent = activeMode === 'quotes' ? 'Cotações China' : 'Pedidos de compra';
     if (activeMode === 'quotes') loadQuotes(true);
   }
 
@@ -711,6 +737,10 @@
       const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSync(`Sincronizado • ${time}`);
       render();
+    } catch (err) {
+      setSync('Erro de conexão');
+      console.error('Erro ao sincronizar pedidos:', err);
+      if (!quiet) showToast('Não foi possível sincronizar os pedidos. Confira a conexão e tente Atualizar.', true, 6000);
     } finally {
       loadingOrders = false;
     }
@@ -776,8 +806,17 @@
       });
     }
 
+    lastFilteredOrders = filtered;
+    if (resultCount) resultCount.textContent = filtered.length.toLocaleString('pt-BR');
+    const activeFilter = situationFilter?.value || '';
+    quickFilterButtons.forEach((button) => {
+      const selected = button.dataset.quickFilter === activeFilter;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+
     if (!filtered.length) {
-      ordersBody.innerHTML = '<tr><td colspan="11" class="empty">Nenhum PO encontrado.</td></tr>';
+      ordersBody.innerHTML = '<tr><td colspan="11" class="empty">Nenhum pedido encontrado com estes filtros. Ajuste a busca ou clique em Limpar filtros.</td></tr>';
       return;
     }
 
@@ -1932,7 +1971,13 @@
       if (error) {
         quotes = [];
         quotesTableAvailable = false;
-        renderQuoteSetup('Cotações China ainda não foram ativadas no Supabase. Rode o arquivo migration_china_quotes.sql uma vez no SQL Editor.');
+        const missingTable = error.code === '42P01' || /relation.*china_quotes|china_quotes.*not found|schema cache/i.test(error.message || '');
+        const denied = error.code === '42501' || /permission denied|row.level.security|unauthorized/i.test(error.message || '');
+        renderQuoteSetup(missingTable
+          ? 'Módulo de cotações indisponível. Um administrador deve revisar a migração migration_china_quotes.sql no Supabase.'
+          : denied
+            ? 'Seu perfil não tem permissão para consultar cotações. Solicite acesso ao administrador.'
+            : 'Não foi possível consultar as cotações. Verifique a conexão e as permissões do Supabase.');
         renderQuotes();
         if (!quiet && !/relation|china_quotes|user_id/i.test(error.message)) showToast(`Erro ao carregar cotações: ${error.message}`, true, 6000);
         return;
@@ -1941,6 +1986,9 @@
       renderQuoteSetup('');
       quotes = data || [];
       renderQuotes();
+    } catch (err) {
+      console.error('Erro ao sincronizar cotações:', err);
+      if (!quiet) showToast('Não foi possível atualizar as cotações. Tente novamente.', true, 6000);
     } finally {
       loadingQuotes = false;
     }
@@ -2004,6 +2052,7 @@
       return new Date(b.sent_at) - new Date(a.sent_at);
     });
 
+    if (quoteResultCount) quoteResultCount.textContent = list.length.toLocaleString('pt-BR');
     if (!list.length) {
       quoteRows.innerHTML = `<tr><td colspan="10" class="empty">${quotesTableAvailable ? 'Nenhuma cotação encontrada.' : 'Ative a tabela china_quotes no Supabase.'}</td></tr>`;
       return;
@@ -2131,6 +2180,49 @@
     await loadQuotes();
   }
 
+  function resetOrdersFilters() {
+    searchInput.value = '';
+    statusFilter.value = '';
+    if (situationFilter) situationFilter.value = '';
+    if (originFollowUpFilter) originFollowUpFilter.value = '';
+    if (orderDateSort) orderDateSort.value = '';
+    renderTable();
+  }
+
+  // Exporta somente os pedidos visíveis, com proteção contra fórmulas de planilha.
+  // Não exige mudanças no banco e não altera nenhum registro.
+  function exportVisibleOrders() {
+    if (!requireEditor()) return;
+    if (!lastFilteredOrders.length) {
+      showToast('Não há pedidos para exportar com os filtros atuais.', true);
+      return;
+    }
+    const headers = ['PO','Fornecedor','Cliente','Origem','Incoterm','Responsável',
+      'Data do pedido','Estimativa','Prontidão real','Etapa FOLLOW UP','Status',
+      'Situação','Prontidão / notificação','Confirmação fornecedor','Observações'];
+    const protectValue = (value) => {
+      let str = String(value ?? '').replace(/\r?\n/g, ' ').trim();
+      if (/^[\s\u0000-\u001f]*[=+@-]/.test(str)) str = "'" + str;
+      return '"' + str.replace(/"/g, '""') + '"';
+    };
+    const rows = lastFilteredOrders.map((o) => [
+      o.po_number,o.supplier,o.client,o.origin,o.incoterm,o.responsible,
+      formatDate(o.order_date),formatDate(o.estimated_ready_date),formatDate(o.actual_ready_date),
+      o.follow_up_status || o.status,statusDisplay(o.status),getHealth(o).label,
+      originFollowUpState(o),o.supplier_confirmed_at ? formatDateOnly(o.supplier_confirmed_at) : '—',o.notes
+    ]);
+    const csv = '\ufeff' + [headers, ...rows].map((r) => r.map(protectValue).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `po-control-${todayISO()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast(`${rows.length} pedido(s) exportado(s) com sucesso.`);
+  }
+
   async function init() {
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
       showMessage(authMessage, 'Configuração do Supabase ausente/incompatível em config.js.');
@@ -2224,6 +2316,16 @@
   });
   poForm.addEventListener('submit', handleSavePO);
 
+  refreshOrdersBtn?.addEventListener('click', async () => {
+    refreshOrdersBtn.disabled = true;
+    try { await loadOrders(); } finally { refreshOrdersBtn.disabled = false; }
+  });
+  clearFiltersBtn?.addEventListener('click', resetOrdersFilters);
+  exportOrdersBtn?.addEventListener('click', exportVisibleOrders);
+  quickFilterButtons.forEach((button) => button.addEventListener('click', () => {
+    if (situationFilter) situationFilter.value = button.dataset.quickFilter;
+    renderTable();
+  }));
   searchInput.addEventListener('input', renderTable);
   statusFilter.addEventListener('change', renderTable);
   situationFilter?.addEventListener('change', renderTable);
@@ -2293,6 +2395,16 @@
       document.querySelectorAll('details.po-row-menu[open]').forEach((menu) => {
         if (menu !== current) menu.removeAttribute('open');
       });
+      // Exibe o menu para cima quando a PO esta perto da base da tabela.
+      requestAnimationFrame(() => {
+        if (!current.open) return;
+        const scroller = current.closest('.table-wrap');
+        const popover = current.querySelector('.po-row-menu-popover');
+        if (!scroller || !popover) return;
+        const area = scroller.getBoundingClientRect();
+        const rect = current.getBoundingClientRect();
+        current.classList.toggle('menu-up', area.bottom - rect.bottom < popover.offsetHeight + 14);
+      });
       return;
     }
 
@@ -2316,11 +2428,27 @@
     if (action === 'delete-protected') await deleteOrderWithPassword(id);
   });
 
+  document.addEventListener('keydown', (event) => {
+    const inField = ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName);
+    if (event.key === '/' && !inField && canRead() && activeMode === 'pos' && !document.querySelector('.modal-backdrop:not(.hidden)')) {
+      event.preventDefault();
+      searchInput.focus();
+    }
+    if (event.key === 'Escape') {
+      if (!poModal.classList.contains('hidden')) closeModal();
+      else if (!quoteModal.classList.contains('hidden')) closeQuoteModal();
+      else if (!orderEmailModal.classList.contains('hidden')) closeOrderEmailModal();
+      document.querySelectorAll('details.po-row-menu[open]').forEach((menu) => menu.removeAttribute('open'));
+    }
+  });
+
   document.addEventListener('click', (event) => {
     document.querySelectorAll('details.po-row-menu[open]').forEach((menu) => {
       if (!menu.contains(event.target)) menu.removeAttribute('open');
     });
   });
 
+  if (todayLabel) todayLabel.textContent = new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
+  modeTabs.forEach((btn) => btn.setAttribute('aria-current', btn.dataset.mode === activeMode ? 'page' : 'false'));
   init();
 })();

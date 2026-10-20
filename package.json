@@ -1,8 +1,8 @@
 {
   "name": "po-control-zpmc",
-  "version": "6.9.1",
+  "version": "7.0.0",
   "private": true,
-  "description": "PO Control - Vercel static build com dependencias locais",
+  "description": "PO Control - Painel profissional de operações com dependências locais",
   "scripts": {
     "build": "node build.mjs"
   },
